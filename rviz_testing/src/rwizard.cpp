@@ -8,7 +8,8 @@
 
 using namespace std;
 
-DiscreteWorkspace w1(2,2,2.5,100);
+DiscreteWorkspace w1(2,2,2.5,30);
+//DiscreteWorkspace w1(2,0.05,2.5,40);
 
 double threshold= 0.02;
 bool received = 0;
@@ -21,7 +22,7 @@ void callbackfunc(const sensor_msgs::PointCloud::ConstPtr& msg){
         if(msg->channels.at(0).values.at(i)<threshold){
             Point p(double(points.at(i).x),double(points.at(i).y),double(points.at(i).z),1);   
             w1.add_point(p);
-            ROS_INFO("Point(%f,%f,%f), val: %f",p.x,p.y,p.z,p.val);
+            //ROS_INFO("Point(%f,%f,%f), val: %f",p.x,p.y,p.z,p.val);
         } 
     }
 
@@ -51,7 +52,8 @@ int main( int argc, char** argv )
         ROS_INFO("Brushfire");
         w1.brushfire();
         ROS_INFO("pub");
-        w1.publish_grid(marker_pub);  
+        w1.publish_grid(marker_pub,"singularities"); //remember to change grid  
+        //w1.publish_grid(marker_pub,"colorgradient");
     }
 
   

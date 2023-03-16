@@ -236,13 +236,15 @@ void DiscreteWorkspace::publish_grid(ros::Publisher &pub, string setting="singul
     marker.lifetime = ros::Duration();
 
     //Create marker array with markers based on setting
+    int m_id=0;
+
     visualization_msgs::MarkerArray marker_array;
     for(int x=0;x<_x_voxels;x++){
         for(int y=0;y<_y_voxels;y++){
             for(int z=0;z<_z_voxels;z++){
                 // Set the namespace and id for this marker.  This serves to create a unique ID
                 // Any marker sent with the same namespace and id will overwrite the old one
-                marker.id=x*_x_voxels*_y_voxels*_z_voxels+y*_y_voxels*_z_voxels+z*_z_voxels;
+                marker.id=m_id++;
                 marker.ns="voxel"+to_string(marker.id);
 
                 //(1.0-(((*this)(x,y,z))/_maxfire));                     
@@ -260,7 +262,8 @@ void DiscreteWorkspace::publish_grid(ros::Publisher &pub, string setting="singul
                         marker_array.markers.push_back(marker); //MarkerArray only member is vector<visualization_msgs::Marker> markers ^_^
                     }
                 } else if(setting=="colorgradient"){
-                    marker.color.b=((*this)(x,y,z))/_maxfire;
+                    marker.color.b=min(5*((*this)(x,y,z))/_maxfire,1.0);
+                    marker.color.g=max(1.0-5*((*this)(x,y,z))/_maxfire,0.0);
                     marker_array.markers.push_back(marker);
 
                 }
