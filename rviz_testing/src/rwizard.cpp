@@ -40,13 +40,16 @@ int main( int argc, char** argv )
     ros::Subscriber pointcloud_sub=n.subscribe<sensor_msgs::PointCloud>("workspacePointCloud",1,callbackfunc);
     
     
+    //spin untill callback has been called
     ROS_INFO("WAITING FOR POINTCLOUD");
     while(!received){
         ros::spinOnce();
     };
+
+    //apply brushfire and publish
     if(ros::ok()){
         ROS_INFO("Brushfire");
-        //w1.brushfire();
+        w1.brushfire();
         ROS_INFO("pub");
         w1.publish_grid(marker_pub);  
     }

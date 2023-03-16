@@ -50,7 +50,7 @@ public:
     Coordinate point_to_coordinate(Point);
     Point coordinate_to_point(Coordinate);
 
-    void publish_grid(ros::Publisher&);
+    void publish_grid(ros::Publisher&,string);
     
     ~DiscreteWorkspace();
 
@@ -202,7 +202,7 @@ void DiscreteWorkspace::brushfire(){
     }
 }
 
-void DiscreteWorkspace::publish_grid(ros::Publisher &pub){
+void DiscreteWorkspace::publish_grid(ros::Publisher &pub, string setting="singularities"){
   //MARKER SETUP-------------------------------------------------------------------------------------------------------------------------------------------------------------
     visualization_msgs::Marker marker;
     // Set the frame ID and timestamp.  See the TF tutorials for information on these.
@@ -217,8 +217,6 @@ void DiscreteWorkspace::publish_grid(ros::Publisher &pub){
     marker.action = visualization_msgs::Marker::ADD;
 
     // Set the pose of the marker.  This is a full 6DOF pose relative to the frame/time specified in the header
-
-
     marker.pose.orientation.x = 0.0;
     marker.pose.orientation.y = 0.0;
     marker.pose.orientation.z = 0.0;
@@ -232,8 +230,12 @@ void DiscreteWorkspace::publish_grid(ros::Publisher &pub){
     // Set the color -- be sure to set alpha to something non-zero!
     marker.color.r = 0.0f;
     marker.color.b = 0.0f;
+    marker.color.g = 1.0f;
+
+    marker.color.a = 1.0;
     marker.lifetime = ros::Duration();
 
+    //Create marker array with markers based on setting
     visualization_msgs::MarkerArray marker_array;
     for(int x=0;x<_x_voxels;x++){
         for(int y=0;y<_y_voxels;y++){
@@ -243,10 +245,8 @@ void DiscreteWorkspace::publish_grid(ros::Publisher &pub){
                 marker.id=x*_x_voxels*_y_voxels*_z_voxels+y*_y_voxels*_z_voxels+z*_z_voxels;
                 marker.ns="voxel"+to_string(marker.id);
 
-                marker.color.g = 1.0;//(1.0-(((*this)(x,y,z))/_maxfire));     
-                marker.color.a = ((*this)(x,y,z));
+                //(1.0-(((*this)(x,y,z))/_maxfire));                     
                 //ROS_INFO("value: %f maxfire: %f frac: %f",(*this)(x,y,z),_maxfire,marker.color.a);
-    
 
                 marker.pose.position.x = coordinate_to_point(Coordinate(x,y,z)).x+1.0/(2*_resolution);
                 marker.pose.position.y = coordinate_to_point(Coordinate(x,y,z)).y+1.0/(2*_resolution);
@@ -254,13 +254,20 @@ void DiscreteWorkspace::publish_grid(ros::Publisher &pub){
 
                 //ROS_INFO("x: %d, y: %d, z: %d, val: %d, alpha: %f",x,y,z,(*this)(x,y,z),marker.color.a);
                 //threshold code
-                if(((*this)(x,y,z))==1){
-                   marker_array.markers.push_back(marker); //MarkerArray only member is vector<visualization_msgs::Marker> markers ^_^
+                //VISUALIZATION SETTINGS
+                if(setting=="singularities"){
+                    if(((*this)(x,y,z))==1){
+                        marker_array.markers.push_back(marker); //MarkerArray only member is vector<visualization_msgs::Marker> markers ^_^
+                    }
+                } else if(setting=="colorgradient"){
+                    marker.color.b=((*this)(x,y,z))/_maxfire;
+                    marker_array.markers.push_back(marker);
+
                 }
+
+
             }
         }
-
-
     }
 
 
