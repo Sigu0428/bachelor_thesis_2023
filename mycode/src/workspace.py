@@ -15,9 +15,9 @@ from sensor_msgs.msg import ChannelFloat32
 pub = rospy.Publisher('workspacePointCloud', PointCloud, queue_size=1, latch=True)
 rospy.init_node('urdfToWorkspace', anonymous=True)
 
-END_EFFECTOR = rospy.get_param("end_effector_name") # "panda_link8"
-BASE = rospy.get_param("base_name") # "panda_link0_sc"
-URDF_PATH = rospy.get_param("urdf_path") # "/home/sigurd/catkin_ws/src/mycode/src/panda_generated.urdf"
+END_EFFECTOR = "panda_link8"
+BASE =  "panda_link0_sc"
+URDF_PATH = "/home/philip/catkin_ws/src/Afrovenator/mycode/src/panda_generated.urdf"
 
 # if gpu available, set devices
 d = "cuda" if torch.cuda.is_available() else "cpu"
@@ -36,7 +36,7 @@ N = 10000
 th_batch = torch.rand(N, len(chain.get_joint_parameter_names()), dtype=dtype, device=d)
 
 # Load yaml file with joint limits
-with open("/home/sigurd/catkin_ws/src/mycode/src/joint_limits.yaml", "r") as stream:
+with open("/home/philip/catkin_ws/src/Afrovenator/mycode/src/joint_limits.yaml", "r") as stream:
     try:
         joint_data = yaml.safe_load(stream)
     except yaml.YAMLError as exc:
