@@ -31,7 +31,7 @@ print(chain)
 
 print(chain.get_joint_parameter_names()[0])
 
-N = 10000
+N = 100000
 # N Uniform random configuration [0, 1]
 th_batch = torch.rand(N, len(chain.get_joint_parameter_names()), dtype=dtype, device=d)
 
