@@ -1,0 +1,8 @@
+<launch>
+    <param name="end_effector_name" type="string" value="$(arg end_effector_name)" />
+    <param name="base_name" type="string" value="$(arg base_name)" />
+    <param name="robot_description" command="$(find xacro)/xacro $(arg model)"/>
+    <param name="joint_limit_yaml" command="cat $(arg joint_limits)"/>
+    
+    <node name="PointCloudGenerator" pkg="mycode" type="genPointCloud.py" output="screen"/>
+</launch>
