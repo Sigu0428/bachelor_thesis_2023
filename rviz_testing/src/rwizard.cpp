@@ -9,7 +9,7 @@
 using namespace std;
 
 //DiscreteWorkspace w1(2,2,2.5,30);
-DiscreteWorkspace w1(2,0.05,2.5,40);
+DiscreteWorkspace w1(2,2,2.5,40);
 
 double threshold= 0.02;
 bool received = 0;
@@ -53,7 +53,7 @@ int main( int argc, char** argv )
         w1.brushfire();
         ROS_INFO("pub");
         //w1.publish_grid(marker_pub,"singularities"); //remember to change grid  
-        w1.publish_grid(marker_pub,"colorgradient");
+        w1.publish_grid(marker_pub,"singularities");
     }
 
   

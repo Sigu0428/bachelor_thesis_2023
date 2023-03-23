@@ -43,6 +43,7 @@ public:
     double & operator()(Coordinate);
 
     bool add_point(Point); //adds point to grid and _points
+    bool add_point_to_container(Point);
 
     void brushfire();
     void rebuild_grid(double); //rebuild grid from _points
@@ -70,9 +71,12 @@ private:
     int _z_voxels;
     //data 
     vector<vector<vector<double>>> _grid;
+    vector<vector<vector<vector<double>>>> _containergrid;
     vector<Point> _points;
     //methods
     void build_grid();
+    void build_container();
+
     bool in_bounds(int,int,int);
     bool in_bounds(Coordinate);
     bool add_point_to_grid_only(Point); //add point to grid, used by rebuild (we dont want duplicates in _points)
@@ -87,6 +91,7 @@ DiscreteWorkspace::DiscreteWorkspace(double x,double y,double z, int res)
     _z_size=z;
     _resolution=res;
     build_grid();
+    build_container();
 }
 
 DiscreteWorkspace::~DiscreteWorkspace(){};
@@ -100,6 +105,14 @@ void DiscreteWorkspace::build_grid(){
     vector<vector<double>> y_cells(_y_voxels,z_cells);
     vector<vector<vector<double>>> x_cells(_x_voxels,y_cells);
     _grid=x_cells;
+}
+
+void DiscreteWorkspace::build_container(){
+    vector<double> list;
+    vector<vector<double>> z_cells(_z_voxels,list);
+    vector<vector<vector<double>>> y_cells(_y_voxels,z_cells);
+    vector<vector<vector<vector<double>>>> x_cells(_x_voxels,y_cells);
+    _containergrid=x_cells;
 }
 
 bool DiscreteWorkspace::in_bounds(int x,int y,int z){
@@ -153,6 +166,17 @@ bool DiscreteWorkspace::add_point(Point p){
         return 0;
     }
 
+}
+
+bool DiscreteWorkspace::add_point_to_container(Point p){
+    //assumes points are in [m]
+    Coordinate c=point_to_coordinate(p);
+    if(in_bounds(c)){
+            _containergrid.at(c.x).at(c.y).at(c.z).push_back(p.val);
+        return 1;    
+    } else {
+        return 0;
+    }
 }
 
 void DiscreteWorkspace::rebuild_grid(double resolution){

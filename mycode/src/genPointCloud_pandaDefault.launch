@@ -1,8 +1,8 @@
 <launch>
     <param name="end_effector_name" type="string" value="panda_link8" />
     <param name="base_name" type="string" value="panda_link0_sc" />
-    <param name="robot_description" command="$(find xacro)/xacro panda.urdf.xacro"/>
-    <param name="joint_limit_yaml" command="cat joint_limits.yaml"/>
+    <param name="robot_description" value="panda_generated.urdf"/>
+    <param name="joint_limit_yaml" value="joint_limits.yaml"/>
     
     <node name="PointCloudGenerator" pkg="mycode" type="genPointCloud.py" output="screen"/>
 </launch>
