@@ -346,8 +346,8 @@ void DiscreteWorkspace::publish_grid(ros::Publisher &pub, string setting="singul
                         marker_array.markers.push_back(marker); //MarkerArray only member is vector<visualization_msgs::Marker> markers ^_^
                     }
                 } else if(setting=="colorgradient"){
-                    marker.color.b=min(10*((*this)(x,y,z))/_maxfire,1.0);
-                    marker.color.g=max(1.0-10*((*this)(x,y,z))/_maxfire,0.0);
+                    marker.color.b=min(6*((*this)(x,y,z))/_maxfire,1.0);
+                    marker.color.g=max(1.0-6*((*this)(x,y,z))/_maxfire,0.0);
                     marker_array.markers.push_back(marker);
                     if((*this)(x,y,z)==0){
                         marker.color.b=0;
