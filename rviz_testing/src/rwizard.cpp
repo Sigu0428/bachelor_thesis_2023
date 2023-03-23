@@ -10,23 +10,23 @@ using namespace std;
 
 //---------------------------------------------------PARAMETERS------------------------------------------------------------------------------------
 
+double threshold= 0.1;
 
-double threshold= 0.02;
-bool received = 0;
+int max_sniffs=3;
 
-int max_sniffs=1;
-
-#define MANIPSLICE
+#define GRADIENTSLICE
 //"manipslice"; //"gradientslice" "singularvoxels"
 
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------
 
+bool received = 0;
+
 #ifdef MANIPSLICE
     DiscreteWorkspace w1(2,0.05,2.5,30);
 #endif
 #ifdef GRADIENTSLICE
-    DiscreteWorkspace w1(2,0.05,2.5,30);
+    DiscreteWorkspace w1(2,0.05,2.5,10);
 #endif
 #ifdef SINGULARVOXELS
     DiscreteWorkspace w1(2,2,2.5,30);
@@ -71,7 +71,7 @@ int main( int argc, char** argv )
     ros::NodeHandle n;
     ros::Rate r(10);
     ros::Publisher marker_pub = n.advertise<visualization_msgs::MarkerArray>("visualization_marker_array", 1);
-    ros::Subscriber pointcloud_sub=n.subscribe<sensor_msgs::PointCloud>("workspacePointCloud",1,add_average_cb); //call cb function when new message is on topic
+    ros::Subscriber pointcloud_sub=n.subscribe<sensor_msgs::PointCloud>("panda_link0_sc/workspacePointCloud",1,add_average_cb); //call cb function when new message is on topic
     
     //spin untill callback has been called
     ROS_INFO("WAITING FOR POINTCLOUD");
@@ -86,7 +86,7 @@ int main( int argc, char** argv )
         ROS_INFO("sniffed %d time(s)",sniffs);
     }
     
-    //modify grid and publish
+    //generate _grid from _containergrid averages and publish
     if(ros::ok()){
         ROS_INFO("pub");
         #ifdef MANIPSLICE
