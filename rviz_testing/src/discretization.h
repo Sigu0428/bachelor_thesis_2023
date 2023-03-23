@@ -43,8 +43,10 @@ public:
     double & operator()(Coordinate);
 
     bool add_point(Point); //adds point to grid and _points
-    bool add_point_to_container(Point);
+    bool add_point_to_container(Point); //doesnt add to _points
 
+    void average_to_singular_grid(double);
+    void average_to_manipulability_grid();
     void brushfire();
     void rebuild_grid(double); //rebuild grid from _points
 
@@ -179,6 +181,61 @@ bool DiscreteWorkspace::add_point_to_container(Point p){
     }
 }
 
+void DiscreteWorkspace::average_to_singular_grid(double threshold){
+    for(int x=0;x<_x_voxels;x++){
+        for(int y=0;y<_y_voxels;y++){
+            for(int z=0;z<_z_voxels;z++){
+                double sum=0;
+                for(int i=0;i<_containergrid.at(x).at(y).at(z).size();i++){
+                    sum+=_containergrid.at(x).at(y).at(z).at(i);
+                }
+                if((sum/_containergrid.at(x).at(y).at(z).size())<threshold){
+                    (*this)(x,y,z)=1;
+                }
+            }
+        }
+    }
+}
+
+void DiscreteWorkspace::average_to_manipulability_grid(){
+    double _minfire=1;
+    for(int x=0;x<_x_voxels;x++){
+        for(int y=0;y<_y_voxels;y++){
+            for(int z=0;z<_z_voxels;z++){
+                double sum=0;
+                for(int i=0;i<_containergrid.at(x).at(y).at(z).size();i++){
+                    sum+=_containergrid.at(x).at(y).at(z).at(i);
+                }
+                //add average to _grid
+                double avg=sum/(_containergrid.at(x).at(y).at(z).size()+1);
+
+
+                (*this)(x,y,z)=avg;
+                if((avg<_minfire)&&(avg!=0)){
+                    _minfire=avg;
+                }
+                if(avg>_maxfire){
+                    _maxfire=avg;
+                }
+            }
+        }
+    }
+    //normalize grid values
+    double factor=1./_minfire;
+    for(int x=0;x<_x_voxels;x++){
+        for(int y=0;y<_y_voxels;y++){
+            for(int z=0;z<_z_voxels;z++){
+                double old_val=(*this)(x,y,z);
+                double new_val=old_val*factor;
+                (*this)(x,y,z)=new_val;
+              //  ROS_INFO("old value: %f, factor: %f ,scaled value: %f",old_val,factor,new_val);
+            }
+        }
+    }
+    _maxfire=_maxfire*factor;
+}
+
+
 void DiscreteWorkspace::rebuild_grid(double resolution){
     _resolution=resolution;
     build_grid();
@@ -278,6 +335,9 @@ void DiscreteWorkspace::publish_grid(ros::Publisher &pub, string setting="singul
                 marker.pose.position.y = coordinate_to_point(Coordinate(x,y,z)).y+1.0/(2*_resolution);
                 marker.pose.position.z = coordinate_to_point(Coordinate(x,y,z)).z+1.0/(2*_resolution);
 
+
+                marker.color.r=0;
+
                 //ROS_INFO("x: %d, y: %d, z: %d, val: %d, alpha: %f",x,y,z,(*this)(x,y,z),marker.color.a);
                 //threshold code
                 //VISUALIZATION SETTINGS
@@ -286,9 +346,14 @@ void DiscreteWorkspace::publish_grid(ros::Publisher &pub, string setting="singul
                         marker_array.markers.push_back(marker); //MarkerArray only member is vector<visualization_msgs::Marker> markers ^_^
                     }
                 } else if(setting=="colorgradient"){
-                    marker.color.b=min(5*((*this)(x,y,z))/_maxfire,1.0);
-                    marker.color.g=max(1.0-5*((*this)(x,y,z))/_maxfire,0.0);
+                    marker.color.b=min(10*((*this)(x,y,z))/_maxfire,1.0);
+                    marker.color.g=max(1.0-10*((*this)(x,y,z))/_maxfire,0.0);
                     marker_array.markers.push_back(marker);
+                    if((*this)(x,y,z)==0){
+                        marker.color.b=0;
+                        marker.color.g=0;
+                        marker.color.r=1;
+                    }
 
                 }
 

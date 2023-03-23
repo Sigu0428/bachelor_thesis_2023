@@ -9,12 +9,12 @@
 using namespace std;
 
 //DiscreteWorkspace w1(2,2,2.5,30);
-DiscreteWorkspace w1(2,2,2.5,40);
+DiscreteWorkspace w1(2,0.05,2.5,20);
 
 double threshold= 0.02;
 bool received = 0;
 
-void callbackfunc(const sensor_msgs::PointCloud::ConstPtr& msg){
+void add_singularities_cb(const sensor_msgs::PointCloud::ConstPtr& msg){
     ROS_INFO("called back");
     vector<geometry_msgs::Point32> points=msg->points;
 
@@ -30,6 +30,30 @@ void callbackfunc(const sensor_msgs::PointCloud::ConstPtr& msg){
 
 }
 
+
+void add_average_cb(const sensor_msgs::PointCloud::ConstPtr& msg){
+    ROS_INFO("called back");
+    vector<geometry_msgs::Point32> points=msg->points;
+
+
+    ROS_INFO("Cloudsize: %f",points.size());
+    for(int i=0;i<points.size();i++){
+        
+        Point p(double(points.at(i).x),double(points.at(i).y),double(points.at(i).z),msg->channels.at(0).values.at(i));   
+        w1.add_point_to_container(p);
+        
+    }
+    //average and add singularities to grid
+    //w1.average_to_singular_grid(threshold);
+    //ROS_INFO("Brushfire");
+    //w1.brushfire();
+    
+    w1.average_to_manipulability_grid();
+    
+    received = 1;
+
+}
+
 int main( int argc, char** argv )
 {
     //init ros, nodehandle and setup topic
@@ -38,7 +62,7 @@ int main( int argc, char** argv )
     ros::Rate r(1);
     ros::Publisher marker_pub = n.advertise<visualization_msgs::MarkerArray>("visualization_marker_array", 1);
 
-    ros::Subscriber pointcloud_sub=n.subscribe<sensor_msgs::PointCloud>("workspacePointCloud",1,callbackfunc);
+    ros::Subscriber pointcloud_sub=n.subscribe<sensor_msgs::PointCloud>("workspacePointCloud",1,add_average_cb);
     
     
     //spin untill callback has been called
@@ -49,11 +73,9 @@ int main( int argc, char** argv )
 
     //apply brushfire and publish
     if(ros::ok()){
-        ROS_INFO("Brushfire");
-        w1.brushfire();
         ROS_INFO("pub");
         //w1.publish_grid(marker_pub,"singularities"); //remember to change grid  
-        w1.publish_grid(marker_pub,"singularities");
+        w1.publish_grid(marker_pub,"colorgradient");
     }
 
   
