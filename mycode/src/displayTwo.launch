@@ -1,0 +1,41 @@
+<launch>
+  <arg name="model" default="$(find mycode)/src/panda.urdf.xacro"/>
+  <arg name="gui" default="false"/>
+  <arg name="rvizconfig" default="$(find mycode)/src/multi_robot.rviz"/>
+
+  <group ns="robot1">
+	  <param name="robot_description" command="$(find xacro)/xacro $(arg model)" />
+    <param name="tf_prefix" value="robot1_tf"/>
+	  
+    <node if="$(arg gui)" name="joint_state_publisher" pkg="joint_state_publisher_gui" type="joint_state_publisher_gui" />
+	  <node unless="$(arg gui)" name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher" />
+	  <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
+    
+    <node name="world2robot" pkg="tf" type="static_transform_publisher" 
+      args="0 0 0 0 0 0 /world /robot1_tf/panda_link0 100" />
+  </group>
+
+  <group ns="robot2">
+	  <param name="robot_description" command="$(find xacro)/xacro $(arg model)" />
+    <param name="tf_prefix" value="robot2_tf"/>
+	  <node if="$(arg gui)" name="joint_state_publisher" pkg="joint_state_publisher_gui" type="joint_state_publisher_gui" />
+	  <node unless="$(arg gui)" name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher" />
+	  <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
+    <node name="world2robot" pkg="tf" type="static_transform_publisher" 
+      args="2 0 0 0 0 0 /world /robot2_tf/panda_link0 100" />
+  </group>
+  
+  <node name="rviz" pkg="rviz" type="rviz" args="-d $(arg rvizconfig)" required="true" />
+
+  <param name="end_effector_name" type="string" value="panda_link8" />
+  <param name="robot_description" command="$(find xacro)/xacro $(arg model)"/>
+  <param name="joint_limit_yaml" command="cat joint_limits.yaml"/>
+  
+  <arg name="base_list" default="[robot1_tf/panda_link0_sc, robot2_tf/panda_link0_sc]"/>
+  <rosparam param="base_name" subst_value="True">$(arg base_list)</rosparam>
+  
+  <remap from="/robot1_tf/panda_link0_sc/workspacePointCloud" to="robot1/workspacePointCloud"/>
+  <remap from="/robot2_tf/panda_link0_sc/workspacePointCloud" to="robot2/workspacePointCloud"/>
+  <node name="PointCloudGenerator" pkg="mycode" type="genPointCloud.py" output="screen"/>
+
+</launch>

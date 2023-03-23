@@ -12,11 +12,13 @@ from geometry_msgs.msg import Point
 from sensor_msgs.msg import PointCloud
 from sensor_msgs.msg import ChannelFloat32
 
-pub = rospy.Publisher('workspacePointCloud', PointCloud, queue_size=1, latch=True)
 rospy.init_node('urdfToWorkspace', anonymous=True)
 
 END_EFFECTOR = rospy.get_param("end_effector_name") # "panda_link8"
-BASE = rospy.get_param("base_name") # "panda_link0_sc"
+
+# eg. "robot1_tf/panda_link0_sc" COULD BE A LIST OF BASE NAMES (in which case the same pointcloud will be published with each base frames on different topics)
+BASE = rospy.get_param("base_name") 
+
 MODEL = rospy.get_param("robot_description") # "/home/sigurd/catkin_ws/src/mycode/src/panda_generated.urdf"
 JOINT_LIMITS = rospy.get_param("joint_limit_yaml")
 
@@ -29,9 +31,9 @@ chain = pk.build_serial_chain_from_urdf(MODEL, END_EFFECTOR)
 #chain = pk.build_serial_chain_from_urdf(open("/home/sigurd/catkin_ws/src/mycode/src/panda_generated.urdf").read(), END_EFFECTOR)
 
 # Print kinematic chain
-print(chain)
+#print(chain)
 
-print(chain.get_frame_names())
+#print(chain.get_frame_names())
 
 N = 10000
 # N Uniform random configuration [0, 1]
@@ -55,7 +57,6 @@ ret = chain.forward_kinematics(th_batch, end_only=True)
 # 3D jacobian N x 2D jacobians and svd
 J = chain.jacobian(th_batch)
 svd = torch.svd(J)
-print(svd)
 
 singular_metric = ChannelFloat32()
 singular_metric.name = "singular metric"
@@ -66,19 +67,23 @@ for x in svd.S:
 points = torch.zeros(N, 1, 3)
 tf_points = ret.transform_points(points)
 
-h = Header()
-h.stamp = rospy.Time.now()
-h.frame_id = BASE
-
-pointCloud = PointCloud()
-pointCloud.header = h
-
+points = []
 for i, [x] in enumerate(tf_points.numpy()):
     p = Point(x[0], x[1], x[2])
-    pointCloud.points.append(p)
+    points.append(p)
 
-pointCloud.channels = [singular_metric]
+# if base is not a list, make it one (a list of bases will publish the same pointcloud on multiple topics, relative to multiple frames)
+if isinstance(BASE, str):
+    BASE = [BASE]
 
-pub.publish(pointCloud)
+for base in BASE:
+    pointCloud = PointCloud()
+    pointCloud.header.stamp = rospy.Time.now()
+    pointCloud.points = points
+    pointCloud.channels = [singular_metric]
+    pointCloud.header.frame_id = base
+
+    pub = rospy.Publisher('{}/workspacePointCloud'.format(base), PointCloud, queue_size=1, latch=True)
+    pub.publish(pointCloud)
 
 rospy.spin()
