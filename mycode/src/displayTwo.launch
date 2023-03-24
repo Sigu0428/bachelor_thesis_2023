@@ -1,41 +1,25 @@
 <launch>
-  <arg name="model" default="$(find mycode)/src/panda.urdf.xacro"/>
-  <arg name="gui" default="false"/>
   <arg name="rvizconfig" default="$(find mycode)/src/multi_robot.rviz"/>
 
-  <group ns="robot1">
-	  <param name="robot_description" command="$(find xacro)/xacro $(arg model)" />
-    <param name="tf_prefix" value="robot1_tf"/>
-	  
-    <node if="$(arg gui)" name="joint_state_publisher" pkg="joint_state_publisher_gui" type="joint_state_publisher_gui" />
-	  <node unless="$(arg gui)" name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher" />
-	  <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
-    
-    <node name="world2robot" pkg="tf" type="static_transform_publisher" 
-      args="0 0 0 0 0 0 /world /robot1_tf/panda_link0 100" />
-  </group>
+  <include file="$(find mycode)/src/namespaced_robot.launch">
+    <arg name="ns" value="robot1"/>
+  </include>
 
-  <group ns="robot2">
-	  <param name="robot_description" command="$(find xacro)/xacro $(arg model)" />
-    <param name="tf_prefix" value="robot2_tf"/>
-	  <node if="$(arg gui)" name="joint_state_publisher" pkg="joint_state_publisher_gui" type="joint_state_publisher_gui" />
-	  <node unless="$(arg gui)" name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher" />
-	  <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
-    <node name="world2robot" pkg="tf" type="static_transform_publisher" 
-      args="2 0 0 0 0 0 /world /robot2_tf/panda_link0 100" />
-  </group>
+  <include file="$(find mycode)/src/namespaced_robot.launch">
+    <arg name="ns" value="robot2"/>
+    <arg name="base_pose" value="2 0 0 0 0 0"/>
+  </include>
   
   <node name="rviz" pkg="rviz" type="rviz" args="-d $(arg rvizconfig)" required="true" />
 
-  <param name="end_effector_name" type="string" value="panda_link8" />
-  <param name="robot_description" command="$(find xacro)/xacro $(arg model)"/>
-  <param name="joint_limit_yaml" command="cat joint_limits.yaml"/>
-  
-  <arg name="base_list" default="[robot1_tf/panda_link0_sc, robot2_tf/panda_link0_sc]"/>
-  <rosparam param="base_name" subst_value="True">$(arg base_list)</rosparam>
-  
   <remap from="/robot1_tf/panda_link0_sc/workspacePointCloud" to="robot1/workspacePointCloud"/>
-  <remap from="/robot2_tf/panda_link0_sc/workspacePointCloud" to="robot2/workspacePointCloud"/>
-  <node name="PointCloudGenerator" pkg="mycode" type="genPointCloud.py" output="screen"/>
+  
+  <include file="$(find mycode)/src/genPointCloud.launch">
+    <arg name="model" value="$(find mycode)/src/panda.urdf.xacro"/>
+    <arg name="end_effector_name" value="panda_link8"/>
+    <arg name="base_name" value="robot1_tf/panda_link0_sc"/>
+    <arg name="joint_limits" value="$(find mycode)/src/joint_limits.yaml"/>
+    <arg name="num_of_points" value="100000"/>
+  </include>
 
 </launch>

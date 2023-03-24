@@ -1,0 +1,21 @@
+<launch>
+    <arg name="ns"/>
+    <arg name="model" default="$(find mycode)/src/panda.urdf.xacro"/>
+    <arg name="joint_gui" default="false"/>
+    <arg name="base_frame_name" default="panda_link0"/>
+    <arg name="base_pose" default="0 0 0 0 0 0"/>
+    <arg name="world_frame" default="world"/>
+
+    <group ns="$(arg ns)">
+	    <param name="robot_description" command="$(find xacro)/xacro $(arg model)" />
+        <param name="tf_prefix" value="$(arg ns)_tf"/>
+	  
+        <node if="$(arg joint_gui)" name="joint_state_publisher" pkg="joint_state_publisher_gui" type="joint_state_publisher_gui" />
+	    <node unless="$(arg joint_gui)" name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher" />
+	    
+        <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher"/>
+    
+        <node name="world2robot_tf_pub" pkg="tf" type="static_transform_publisher" 
+            args="$(arg base_pose) /$(arg world_frame) /$(arg ns)_tf/$(arg base_frame_name) 100" />
+    </group>
+</launch>

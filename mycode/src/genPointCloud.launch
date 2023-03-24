@@ -1,8 +1,15 @@
 <launch>
-    <param name="end_effector_name" type="string" value="$(arg end_effector_name)" />
-    <param name="base_name" type="string" value="$(arg base_name)" />
+    <arg name="model" default="$(find mycode)/src/panda.urdf.xacro"/>
+    <arg name="end_effector_name" default="panda_link8"/>
+    <arg name="base_name" default="panda_link0_sc"/>
+    <arg name="joint_limits" default="$(find mycode)/src/joint_limits.yaml"/>
+    <arg name="num_of_points" default="100000"/>
+
     <param name="robot_description" command="$(find xacro)/xacro $(arg model)"/>
+    <param name="end_effector_name" type="string" value="$(arg end_effector_name)"/>
+    <param name="base_name" type="string" value="$(arg base_name)"/>
     <param name="joint_limit_yaml" command="cat $(arg joint_limits)"/>
+    <param name="num_of_points" type="int" value="$(arg num_of_points)"/>
     
     <node name="PointCloudGenerator" pkg="mycode" type="genPointCloud.py" output="screen"/>
 </launch>
