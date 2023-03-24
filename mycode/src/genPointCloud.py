@@ -21,12 +21,10 @@ rospy.loginfo("genPointCloud: START")
 
 END_EFFECTOR = rospy.get_param("end_effector_name") # "panda_link8"
 
-# eg. "robot1_tf/panda_link0_sc" COULD BE A LIST OF BASE NAMES (in which case the same pointcloud will be published with each base frames on different topics)
-
 MODEL = rospy.get_param("robot_description") # "/home/sigurd/catkin_ws/src/mycode/src/panda_generated.urdf"
 JOINT_LIMITS = rospy.get_param("joint_limit_yaml")
 
-N = rospy.get_param("N_points", 100000)
+N = rospy.get_param("num_of_points", 100000)
 
 # if gpu available, set devices
 d = "cuda" if torch.cuda.is_available() else "cpu"
@@ -34,7 +32,6 @@ dtype = torch.float32
 
 from contextlib import contextmanager,redirect_stderr,redirect_stdout
 from os import devnull
-
 
 @contextmanager
 def suppress_stdout_stderr():
