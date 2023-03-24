@@ -12,26 +12,25 @@ using namespace std;
 
 double threshold= 0.1;
 
-int max_sniffs=2;
+int max_sniffs=1;
 
-#define GRADIENTSLICE
-//"manipslice"; //"gradientslice" "singularvoxels"
+#define SINGULARVOXELS 10
+//"manipslice"; //"gradientslice" "singularvoxels" value: res
 
 
-string rel_path;
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------
 
 bool received = 0;
 
 #ifdef MANIPSLICE
-    DiscreteWorkspace w1(2,0.05,2.5,30);
+    DiscreteWorkspace w1(2,0.05,2.5,MANIPSLICE);
 #endif
 #ifdef GRADIENTSLICE
-    DiscreteWorkspace w1(2,0.05,2.5,10);
+    DiscreteWorkspace w1(2,0.05,2.5,GRADIENTSLICE);
 #endif
 #ifdef SINGULARVOXELS
-    DiscreteWorkspace w1(2,2,2.5,30);
+    DiscreteWorkspace w1(2,2,2.5,SINGULARVOXELS);
 #endif
 
 
@@ -72,7 +71,6 @@ int main( int argc, char** argv )
     ros::init(argc, argv, "basic_shapes");
     ros::NodeHandle n;
     ros::Rate r(10);
-    ros::Rate r_long(0.5);
     ros::Publisher marker_pub = n.advertise<visualization_msgs::MarkerArray>("visualization_marker_array", 1);
     ros::Subscriber pointcloud_sub=n.subscribe<sensor_msgs::PointCloud>("panda_link0_sc/workspacePointCloud",1,add_average_cb); //call cb function when new message is on topic
     
@@ -80,7 +78,7 @@ int main( int argc, char** argv )
     ROS_INFO("WAITING FOR POINTCLOUD");
     int sniffs=0;
     while(max_sniffs-sniffs){ 
-        system("roslaunch genPointCloud_pandaDefault.launch");
+        system("roslaunch ~/catkin_ws/src/Afrovenator/mycode/src/genPointCloud_pandaDefault.launch");
         while(!received){ //Spin and sleep until pointcloud is published to topic
             ros::spinOnce(); 
             r.sleep();
@@ -95,15 +93,18 @@ int main( int argc, char** argv )
     if(ros::ok()){
         ROS_INFO("pub");
         #ifdef MANIPSLICE
+            w1.generate_average_grid();
             w1.average_to_manipulability_grid();
-            w1.publish_grid(marker_pub,"colorgradient");
+            w1.publish_grid(marker_pub,"manipulabilitygradient");
         #endif
         #ifdef GRADIENTSLICE
+            w1.generate_average_grid();
             w1.average_to_singular_grid(threshold);
             w1.brushfire();
-            w1.publish_grid(marker_pub,"colorgradient");
+            w1.publish_grid(marker_pub,"singularitygradient");
         #endif
         #ifdef SINGULARVOXELS
+            w1.generate_average_grid();
             w1.average_to_singular_grid(threshold);
             w1.publish_grid(marker_pub,"singularities");
         #endif
