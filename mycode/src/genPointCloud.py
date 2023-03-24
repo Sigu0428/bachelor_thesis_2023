@@ -15,18 +15,18 @@ from sensor_msgs.msg import PointCloud
 from sensor_msgs.msg import ChannelFloat32
 
 rospy.init_node('urdfToWorkspace', anonymous=True)
+BASE = rospy.get_param("base_name") 
+pub = rospy.Publisher('{}/workspacePointCloud'.format(BASE), PointCloud, queue_size=1, latch=False)
 rospy.loginfo("genPointCloud: START")
 
 END_EFFECTOR = rospy.get_param("end_effector_name") # "panda_link8"
 
 # eg. "robot1_tf/panda_link0_sc" COULD BE A LIST OF BASE NAMES (in which case the same pointcloud will be published with each base frames on different topics)
-BASE = rospy.get_param("base_name") 
 
 MODEL = rospy.get_param("robot_description") # "/home/sigurd/catkin_ws/src/mycode/src/panda_generated.urdf"
 JOINT_LIMITS = rospy.get_param("joint_limit_yaml")
 
-N = rospy.get_param("N_points", 500000)
-BATCHES = rospy.get_param("batches", 1)
+N = rospy.get_param("N_points", 100000)
 
 # if gpu available, set devices
 d = "cuda" if torch.cuda.is_available() else "cpu"
@@ -34,6 +34,7 @@ dtype = torch.float32
 
 from contextlib import contextmanager,redirect_stderr,redirect_stdout
 from os import devnull
+
 
 @contextmanager
 def suppress_stdout_stderr():
@@ -57,78 +58,71 @@ rospy.loginfo("genPointCloud: Load URDF -> DONE, time elapsed:{}".format(time.pr
 singular_metric = ChannelFloat32()
 singular_metric.name = "singular metric"
 points = []
-for i in range(BATCHES):
 
-    t0 = time.process_time()
-    # N Uniform random configuration [0, 1]
-    th_batch = torch.rand(N, len(chain.get_joint_parameter_names()), dtype=dtype, device=d)
-    rospy.loginfo("genPointCloud: generate configurations -> DONE, time elapsed:{}".format(time.process_time()-t0))
+t0 = time.process_time()
+# N Uniform random configuration [0, 1]
+th_batch = torch.rand(N, len(chain.get_joint_parameter_names()), dtype=dtype, device=d)
+rospy.loginfo("genPointCloud: generate configurations -> DONE, time elapsed:{}".format(time.process_time()-t0))
 
-    t0 = time.process_time()
-    # Load yaml file with joint limits
-    try:
-        joint_data = yaml.safe_load(JOINT_LIMITS)
-    except yaml.YAMLError as exc:
-        print(exc)
+t0 = time.process_time()
+# Load yaml file with joint limits
+try:
+    joint_data = yaml.safe_load(JOINT_LIMITS)
+except yaml.YAMLError as exc:
+    print(exc)
 
-    limit_width = torch.zeros(7)
-    limit_offset = torch.zeros(7)
-    for i, value in enumerate(joint_data.values()):
-            limit_width[i] = (value["limit"]["upper"] - value["limit"]["lower"])
-            limit_offset[i] = value["limit"]["lower"]
+limit_width = torch.zeros(7)
+limit_offset = torch.zeros(7)
+for i, value in enumerate(joint_data.values()):
+        limit_width[i] = (value["limit"]["upper"] - value["limit"]["lower"])
+        limit_offset[i] = value["limit"]["lower"]
 
-    limit_width = torch.diag(limit_width)
-    limit_offset = torch.diag(limit_offset)
-    
-    th_batch = th_batch.matmul(limit_width)
-    limit_offset = torch.ones(N, 7).matmul(limit_offset)
-    th_batch = th_batch.add(limit_offset)
+limit_width = torch.diag(limit_width)
+limit_offset = torch.diag(limit_offset)
 
-    rospy.loginfo("genPointCloud: load joint limits -> DONE, time elapsed:{}".format(time.process_time()-t0))
+th_batch = th_batch.matmul(limit_width)
+limit_offset = torch.ones(N, 7).matmul(limit_offset)
+th_batch = th_batch.add(limit_offset)
 
-    t0 = time.process_time()
-    # Generate forward kinematics 3D transform N x 2D transforms
-    ret = chain.forward_kinematics(th_batch, end_only=True)
-    rospy.loginfo("genPointCloud: gen. fk -> DONE, time elapsed:{}".format(time.process_time()-t0))
+rospy.loginfo("genPointCloud: load joint limits -> DONE, time elapsed:{}".format(time.process_time()-t0))
 
-    # 3D jacobian N x 2D jacobians and svd
-    t0 = time.process_time()
-    J = chain.jacobian(th_batch)
-    rospy.loginfo("genPointCloud: gen. jacobian -> DONE, time elapsed:{}".format(time.process_time()-t0))
+t0 = time.process_time()
+# Generate forward kinematics 3D transform N x 2D transforms
+ret = chain.forward_kinematics(th_batch, end_only=True)
+rospy.loginfo("genPointCloud: gen. fk -> DONE, time elapsed:{}".format(time.process_time()-t0))
 
-    t0 = time.process_time()
-    svd = torch.svd(J)
-    rospy.loginfo("genPointCloud: gen. svd -> DONE, time elapsed:{}".format(time.process_time()-t0))
+# 3D jacobian N x 2D jacobians and svd
+t0 = time.process_time()
+J = chain.jacobian(th_batch)
+rospy.loginfo("genPointCloud: gen. jacobian -> DONE, time elapsed:{}".format(time.process_time()-t0))
 
-    t0 = time.process_time()
-    for x in svd.S:
-        #singular_metric.values.append(prod(x)**(1.0/6.0))
-        #singular_metric.values.append(x[-1] / x[0])
-        singular_metric.values.append(x[-1])
-        #singular_metric.values.append(x[0] * x[1] * x[2] * x[3] * x[4] * x[5])
-    rospy.loginfo("genPointCloud: calc. manipulability index -> DONE, time elapsed:{}".format(time.process_time()-t0))
+t0 = time.process_time()
+svd = torch.svd(J)
+rospy.loginfo("genPointCloud: gen. svd -> DONE, time elapsed:{}".format(time.process_time()-t0))
 
-    t0 = time.process_time()
-    zero_points = torch.zeros(N, 1, 3)
-    tf_points = ret.transform_points(zero_points)
+t0 = time.process_time()
+for x in svd.S:
+    #singular_metric.values.append(prod(x)**(1.0/6.0))
+    #singular_metric.values.append(x[-1] / x[0])
+    singular_metric.values.append(x[-1])
+    #singular_metric.values.append(x[0] * x[1] * x[2] * x[3] * x[4] * x[5])
+rospy.loginfo("genPointCloud: calc. manipulability index -> DONE, time elapsed:{}".format(time.process_time()-t0))
 
-    for i, [x] in enumerate(tf_points.numpy()):
-        p = Point(x[0], x[1], x[2])
-        points.append(p)
-    rospy.loginfo("genPointCloud: tf points using fk -> DONE, time elapsed:{}".format(time.process_time()-t0))
-    
-# if base is not a list, make it one (a list of bases will publish the same pointcloud on multiple topics, relative to multiple frames)
-if isinstance(BASE, str):
-    BASE = [BASE]
+t0 = time.process_time()
+zero_points = torch.zeros(N, 1, 3)
+tf_points = ret.transform_points(zero_points)
 
-for base in BASE:
-    pointCloud = PointCloud()
-    pointCloud.header.stamp = rospy.Time.now()
-    pointCloud.points = points
-    pointCloud.channels = [singular_metric]
-    pointCloud.header.frame_id = base
+for i, [x] in enumerate(tf_points.numpy()):
+    p = Point(x[0], x[1], x[2])
+    points.append(p)
+rospy.loginfo("genPointCloud: tf points using fk -> DONE, time elapsed:{}".format(time.process_time()-t0))
 
-    pub = rospy.Publisher('{}/workspacePointCloud'.format(base), PointCloud, queue_size=1, latch=True)
-    pub.publish(pointCloud)
+pointCloud = PointCloud()
+pointCloud.header.stamp = rospy.Time.now()
+pointCloud.points = points
+pointCloud.channels = [singular_metric]
+pointCloud.header.frame_id = BASE
 
-rospy.spin()
+pub.publish(pointCloud)
+
+#rospy.spin()
