@@ -37,21 +37,26 @@ struct Coordinate{  //grid index
 class DiscreteWorkspace{
 
 public:
-    DiscreteWorkspace(double,double,double,int); //0 for empty cells
+    DiscreteWorkspace(double,double,double,int); //0 for empty voxels
 
     double & operator()(int,int,int);
     double & operator()(Coordinate);
 
     bool add_point(Point); //adds point to grid and _points
-    bool add_point_to_container(Point); //doesnt add to _points
+    bool add_point_to_container(Point); //adds point to _containergrid and _points
 
-    void average_to_singular_grid(double);
-    void average_to_manipulability_grid();
-    void brushfire();
-    void rebuild_grid(double); //rebuild grid from _points
+    void generate_average_grid(); //fill grid cells with average from _containergrid, cells with no samples average to 0
 
+    void average_to_singular_grid(double); //use averaged manipulability to define singularities (1) based on threshold
+    void average_to_manipulability_grid(); //use scale averaged manipulability grid for visualization
+
+    void brushfire(); //generate brushfire on grid based on 
+
+    void rebuild_grids(double); //rescale and rebuild grid and container from _points
+
+    //conversions
     Coordinate point_to_coordinate(Point);
-    Point coordinate_to_point(Coordinate);
+    Point coordinate_to_point(Coordinate); //places point and center of voxel
 
     void publish_grid(ros::Publisher&,string);
     
@@ -59,8 +64,7 @@ public:
 
 
 private:
-    double dummy = -500;
-    double _maxfire=1;
+
     //Physical workspace size
     double _x_size;     //[m]
     double _y_size;
@@ -71,16 +75,25 @@ private:
     int _x_voxels;
     int _y_voxels;
     int _z_voxels;
+
+    //Trackers for min and max brushfire/manipulability
+    double _maxfire=1; //manximum cell value from brushfire
+    double _max_manip=0; //maximum manipulability for a cell
+    double _min_manip=1; //minimum non-zero manipulability for a cell
+
     //data 
     vector<vector<vector<double>>> _grid;
     vector<vector<vector<vector<double>>>> _containergrid;
-    vector<Point> _points;
+
+    vector<Point> _points; //list of added samples, ONLY USED TO RESCALE GRIDS
+    vector<Point> _singularities; //list of singularities, used to merge grids
+
     //methods
     void build_grid();
-    void build_container();
-
+    void build_container(); //build _containergrid with a 0 in each voxel
     bool in_bounds(int,int,int);
     bool in_bounds(Coordinate);
+    bool add_point_to_container_only(Point); //add point to container, used by rebuild (we dont want duplicates in _points)
     bool add_point_to_grid_only(Point); //add point to grid, used by rebuild (we dont want duplicates in _points)
 
 };
@@ -110,7 +123,7 @@ void DiscreteWorkspace::build_grid(){
 }
 
 void DiscreteWorkspace::build_container(){
-    vector<double> list;
+    vector<double> list(1,0); //initialize every cell with a 0 to ensure all averages are defined
     vector<vector<double>> z_cells(_z_voxels,list);
     vector<vector<vector<double>>> y_cells(_y_voxels,z_cells);
     vector<vector<vector<vector<double>>>> x_cells(_x_voxels,y_cells);
@@ -147,11 +160,22 @@ Point DiscreteWorkspace::coordinate_to_point(Coordinate c){
     return p;
 }
 
-
 bool DiscreteWorkspace::add_point_to_grid_only(Point p){
     //assumes points are in [m]
     if(in_bounds(point_to_coordinate(p))){
         (*this)(point_to_coordinate(p))=p.val;   
+        return 1;    
+    } else {
+        return 0;
+    }
+
+}
+
+bool DiscreteWorkspace::add_point_to_container_only(Point p){
+    //assumes points are in [m]
+    Coordinate c=point_to_coordinate(p);
+    if(in_bounds(c)){
+            _containergrid.at(c.x).at(c.y).at(c.z).push_back(p.val);
         return 1;    
     } else {
         return 0;
@@ -175,9 +199,32 @@ bool DiscreteWorkspace::add_point_to_container(Point p){
     Coordinate c=point_to_coordinate(p);
     if(in_bounds(c)){
             _containergrid.at(c.x).at(c.y).at(c.z).push_back(p.val);
+            _points.push_back(p);
         return 1;    
     } else {
         return 0;
+    }
+}
+
+void DiscreteWorkspace::generate_average_grid(){
+    for(int x=0;x<_x_voxels;x++){
+        for(int y=0;y<_y_voxels;y++){
+            for(int z=0;z<_z_voxels;z++){
+                double sum=0;
+                for(int i=0;i<_containergrid.at(x).at(y).at(z).size();i++){
+                    sum+=_containergrid.at(x).at(y).at(z).at(i);
+                }
+                double avg=sum/_containergrid.at(x).at(y).at(z).size();
+                (*this)(x,y,z)=avg;
+                if(avg>_max_manip){
+                    _max_manip=avg;
+                }
+                if((avg<_min_manip)&&(avg!=0)){
+                    _min_manip=avg;
+                }
+                //add avg point to _points
+            }
+        }
     }
 }
 
@@ -185,12 +232,11 @@ void DiscreteWorkspace::average_to_singular_grid(double threshold){
     for(int x=0;x<_x_voxels;x++){
         for(int y=0;y<_y_voxels;y++){
             for(int z=0;z<_z_voxels;z++){
-                double sum=0;
-                for(int i=0;i<_containergrid.at(x).at(y).at(z).size();i++){
-                    sum+=_containergrid.at(x).at(y).at(z).at(i);
-                }
-                if((sum/_containergrid.at(x).at(y).at(z).size())<threshold){
-                    (*this)(x,y,z)=1;
+                if(((*this)(x,y,z)<threshold)&&((*this)(x,y,z)!=0)){ //if manipulability is 0 after averaging, there is no sample, and we ignore voxel
+                    (*this)(x,y,z)=1; 
+                    _singularities.push_back(coordinate_to_point(Coordinate(x,y,z)));
+                } else {
+                    (*this)(x,y,z)=0;
                 }
             }
         }
@@ -198,49 +244,29 @@ void DiscreteWorkspace::average_to_singular_grid(double threshold){
 }
 
 void DiscreteWorkspace::average_to_manipulability_grid(){
-    double _minfire=1;
-    for(int x=0;x<_x_voxels;x++){
-        for(int y=0;y<_y_voxels;y++){
-            for(int z=0;z<_z_voxels;z++){
-                double sum=0;
-                for(int i=0;i<_containergrid.at(x).at(y).at(z).size();i++){
-                    sum+=_containergrid.at(x).at(y).at(z).at(i);
-                }
-                //add average to _grid
-                double avg=sum/(_containergrid.at(x).at(y).at(z).size()+1);
-
-
-                (*this)(x,y,z)=avg;
-                if((avg<_minfire)&&(avg!=0)){
-                    _minfire=avg;
-                }
-                if(avg>_maxfire){
-                    _maxfire=avg;
-                }
-            }
-        }
-    }
+    ROS_INFO("min %f",_min_manip);
     //normalize grid values
-    double factor=1./_minfire;
+    double factor=1./_min_manip;
     for(int x=0;x<_x_voxels;x++){
         for(int y=0;y<_y_voxels;y++){
             for(int z=0;z<_z_voxels;z++){
                 double old_val=(*this)(x,y,z);
                 double new_val=old_val*factor;
                 (*this)(x,y,z)=new_val;
-              //  ROS_INFO("old value: %f, factor: %f ,scaled value: %f",old_val,factor,new_val);
+                ROS_INFO("old value: %f, factor: %f ,scaled value: %f",old_val,factor,new_val);
             }
         }
     }
-    _maxfire=_maxfire*factor;
+    _max_manip=_max_manip*factor;
 }
 
-
-void DiscreteWorkspace::rebuild_grid(double resolution){
+void DiscreteWorkspace::rebuild_grids(double resolution){
     _resolution=resolution;
     build_grid();
+    build_container();
     for(int i=0;i<_points.size();i++){
         add_point_to_grid_only(_points.at(i));
+        add_point_to_container_only(_points.at(i));
     }
 }
 
@@ -345,9 +371,18 @@ void DiscreteWorkspace::publish_grid(ros::Publisher &pub, string setting="singul
                     if(((*this)(x,y,z))==1){
                         marker_array.markers.push_back(marker); //MarkerArray only member is vector<visualization_msgs::Marker> markers ^_^
                     }
-                } else if(setting=="colorgradient"){
-                    marker.color.b=min(6*((*this)(x,y,z))/_maxfire,1.0);
-                    marker.color.g=max(1.0-6*((*this)(x,y,z))/_maxfire,0.0);
+                } else if(setting=="manipulabilitygradient"){
+                    marker.color.b=min(1*((*this)(x,y,z))/_max_manip,1.0); //max is taken so that gradient works regardless of if brushfire or manipubility grid is being visualized
+                    marker.color.g=max(1.0-1*((*this)(x,y,z))/_max_manip,0.0);
+                    marker_array.markers.push_back(marker);
+                    if((*this)(x,y,z)==0){
+                        marker.color.b=0;
+                        marker.color.g=0;
+                        marker.color.r=1;
+                    }
+                } else if(setting=="singularitygradient"){
+                    marker.color.b=min(3*((*this)(x,y,z))/_maxfire,1.0); //max is taken so that gradient works regardless of if brushfire or manipubility grid is being visualized
+                    marker.color.g=max(1.0-3*((*this)(x,y,z))/_maxfire,0.0);
                     marker_array.markers.push_back(marker);
                     if((*this)(x,y,z)==0){
                         marker.color.b=0;
