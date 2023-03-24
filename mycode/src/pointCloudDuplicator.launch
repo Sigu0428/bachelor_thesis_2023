@@ -1,0 +1,11 @@
+<launch>
+    <arg name="target_frame"/>
+    <arg name="sub_topic"/>
+    <arg name="pub_topic"/>
+
+    <param name="target_frame" type="string" value="$(arg target_frame)"/>
+    <param name="sub_topic" type="string" value="$(arg sub_topic)"/>
+    <param name="pub_topic" type="string" value="$(arg pub_topic)"/>
+    
+    <node name="PointCloudDuplicator" pkg="mycode" type="pointCloudDuplicator" output="screen"/>
+</launch>

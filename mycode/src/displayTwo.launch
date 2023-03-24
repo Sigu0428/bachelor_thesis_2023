@@ -9,6 +9,12 @@
     <arg name="ns" value="robot2"/>
     <arg name="base_pose" value="2 0 0 0 0 0"/>
   </include>
+
+  <include file="$(find mycode)/src/pointCloudDuplicator.launch">
+    <arg name="target_frame" value="robot2_tf/panda_link0_sc"/>
+    <arg name="sub_topic" value="robot1/workspacePointCloud"/>
+    <arg name="pub_topic" value="robot2/workspacePointCloud"/>
+  </include>
   
   <node name="rviz" pkg="rviz" type="rviz" args="-d $(arg rvizconfig)" required="true" />
 
@@ -19,7 +25,7 @@
     <arg name="end_effector_name" value="panda_link8"/>
     <arg name="base_name" value="robot1_tf/panda_link0_sc"/>
     <arg name="joint_limits" value="$(find mycode)/src/joint_limits.yaml"/>
-    <arg name="num_of_points" value="100000"/>
+    <arg name="num_of_points" value="500000"/>
   </include>
 
 </launch>

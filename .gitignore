@@ -1,2 +1,3 @@
 build/
 franka_ros_local/
+*.vscode
