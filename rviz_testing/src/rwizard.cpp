@@ -10,15 +10,15 @@ using namespace std;
 
 //---------------------------------------------------PARAMETERS------------------------------------------------------------------------------------
 
-double threshold= 0.1;
+double threshold= 0.08;
 
 int max_sniffs=1;
+int N_points=100000;
 
-#define SINGULARVOXELS 10
+#define GRADIENTSLICE 10
 //"manipslice"; //"gradientslice" "singularvoxels" value: res
 
-
-
+string launchpath="roslaunch ~/catkin_ws/src/Afrovenator/mycode/src/genPointCloud.launch num_of_points:="+to_string(N_points);
 //-------------------------------------------------------------------------------------------------------------------------------------------------
 
 bool received = 0;
@@ -71,14 +71,20 @@ int main( int argc, char** argv )
     ros::init(argc, argv, "basic_shapes");
     ros::NodeHandle n;
     ros::Rate r(10);
-    ros::Publisher marker_pub = n.advertise<visualization_msgs::MarkerArray>("visualization_marker_array", 1);
+    ros::Rate r_long(0.2);
+
+    ros::Publisher marker_pub = n.advertise<visualization_msgs::Marker>("visualization_marker", 1);
+    ros::Publisher marker_array_pub = n.advertise<visualization_msgs::MarkerArray>("visualization_marker_array", 1);
     ros::Subscriber pointcloud_sub=n.subscribe<sensor_msgs::PointCloud>("panda_link0_sc/workspacePointCloud",1,add_average_cb); //call cb function when new message is on topic
-    
+    r.sleep();
+
+
     //spin untill callback has been called
     ROS_INFO("WAITING FOR POINTCLOUD");
     int sniffs=0;
     while(max_sniffs-sniffs){ 
-        system("roslaunch ~/catkin_ws/src/Afrovenator/mycode/src/genPointCloud_pandaDefault.launch");
+        
+        system(launchpath.c_str());
         while(!received){ //Spin and sleep until pointcloud is published to topic
             ros::spinOnce(); 
             r.sleep();
@@ -95,18 +101,36 @@ int main( int argc, char** argv )
         #ifdef MANIPSLICE
             w1.generate_average_grid();
             w1.average_to_manipulability_grid();
-            w1.publish_grid(marker_pub,"manipulabilitygradient");
+            w1.publish_grid(marker_array_pub,"manipulabilitygradient");
         #endif
         #ifdef GRADIENTSLICE
             w1.generate_average_grid();
             w1.average_to_singular_grid(threshold);
+
+            w1.publish_grid(marker_array_pub,"singularitygradient");
+            w1.sphere_fit_singularities();
+            w1.publish_sphere_fit(marker_pub);
+            r_long.sleep();
+            w1.add_singularities_to_fit();
+            r_long.sleep();
+            w1.publish_grid(marker_array_pub,"singularitygradient");
+            w1.fill_unreachable_areas();
             w1.brushfire();
-            w1.publish_grid(marker_pub,"singularitygradient");
+            r_long.sleep();
+            w1.publish_grid(marker_array_pub,"singularitygradient");
         #endif
         #ifdef SINGULARVOXELS
             w1.generate_average_grid();
             w1.average_to_singular_grid(threshold);
-            w1.publish_grid(marker_pub,"singularities");
+            w1.publish_grid(marker_array_pub,"singularities");
+            w1.sphere_fit_singularities();
+            w1.publish_sphere_fit(marker_pub);
+            /*
+            r_long.sleep();
+            w1.add_singularities_to_fit();
+
+            w1.publish_grid(marker_array_pub,"singularities");
+            */
         #endif
           
     }

@@ -1,0 +1,3 @@
+[submodule "rviz_testing/rviz_testing/src/quickhull"]
+	path = rviz_testing/rviz_testing/src/quickhull
+	url = git@github.com:Sigu0428/Afrovenator.git

@@ -6,6 +6,14 @@
 #include "discretization.h"
 #include <cmath>
 #include "visualization_msgs/MarkerArray.h"
+#include "quickhull/QuickHull.hpp"
+
+//CHECK LICENSE
+#include "nr3.h"
+#include "svd.h"
+#include "utilities.h"
+
+
 
 using namespace std;
 
@@ -22,6 +30,19 @@ struct Point{ //point in space
     double val;
 };
 
+struct Vector{
+    Vector(Point p2, Point p1){
+        x=p2.x-p1.x;
+        y=p2.y-p1.y;
+        z=p2.z-p1.z;
+    }
+    double size(){
+        sqrt(pow(x,2)+pow(y,2)+pow(z,2));
+    }
+    double x;
+    double y;  
+    double z;
+};
 struct Coordinate{  //grid index
     Coordinate(double x_in,double y_in, double z_in){
         x=x_in;
@@ -33,6 +54,19 @@ struct Coordinate{  //grid index
     int z;
 };
 
+struct Sphere{
+    Sphere(double a_in,double b_in, double c_in, double r_in){
+        a=a_in;
+        b=b_in;
+        c=c_in;
+        r=r_in;
+    }
+    Sphere(){};
+    double a;
+    double b;  
+    double c;
+    double r;
+};
 
 class DiscreteWorkspace{
 
@@ -52,6 +86,11 @@ public:
 
     void brushfire(); //generate brushfire on grid based on 
 
+
+    void sphere_fit_singularities();
+    void add_singularities_to_fit();
+    void fill_unreachable_areas();
+
     void rebuild_grids(double); //rescale and rebuild grid and container from _points
 
     //conversions
@@ -59,9 +98,10 @@ public:
     Point coordinate_to_point(Coordinate); //places point and center of voxel
 
     void publish_grid(ros::Publisher&,string);
-    
-    ~DiscreteWorkspace();
 
+    void publish_sphere_fit(ros::Publisher&);
+
+    ~DiscreteWorkspace();
 
 private:
 
@@ -77,9 +117,9 @@ private:
     int _z_voxels;
 
     //Trackers for min and max brushfire/manipulability
-    double _maxfire=1; //manximum cell value from brushfire
-    double _max_manip=0; //maximum manipulability for a cell
-    double _min_manip=1; //minimum non-zero manipulability for a cell
+    double _maxfire=1; //maximum voxel value from brushfire
+    double _max_manip=0; //maximum manipulability for a voxel
+    double _min_manip=1; //minimum non-zero manipulability for a voxel
 
     //data 
     vector<vector<vector<double>>> _grid;
@@ -88,13 +128,21 @@ private:
     vector<Point> _points; //list of added samples, ONLY USED TO RESCALE GRIDS
     vector<Point> _singularities; //list of singularities, used to merge grids
 
+    Sphere _singularity_fit;
+
     //methods
-    void build_grid();
+
+    void build_grid(); //build _grid with 0 in each voxel
     void build_container(); //build _containergrid with a 0 in each voxel
     bool in_bounds(int,int,int);
     bool in_bounds(Coordinate);
     bool add_point_to_container_only(Point); //add point to container, used by rebuild (we dont want duplicates in _points)
     bool add_point_to_grid_only(Point); //add point to grid, used by rebuild (we dont want duplicates in _points)
+
+
+
+    vector<Point> convex_hull_singularities(); //creates convex hull from _singularities. Untested and unused
+
 
 };
 
@@ -309,6 +357,50 @@ void DiscreteWorkspace::brushfire(){
     }
 }
 
+void DiscreteWorkspace::sphere_fit_singularities(){
+
+    //parameters
+    double sigma=1;
+
+    using namespace util;        
+    int N=_singularities.size(); //points
+  
+    int M=4;
+
+
+    //generating design matrix A.
+    MatDoub A(N,M);
+    VecDoub b(N);
+
+    for(int i=0;i<N;i++){
+        A[i][0]=2*_singularities.at(i).x;
+        A[i][1]=2*_singularities.at(i).y;
+        A[i][2]=2*_singularities.at(i).z;
+        A[i][3]=1;
+        b[i]=(pow(_singularities.at(i).x,2)+pow(_singularities.at(i).y,2)+pow(_singularities.at(i).z,2))/sigma;
+    }
+
+    MatDoub AT(M,N);
+    MatDoub C(M,M);
+    VecDoub c(M);
+    VecDoub a(M);
+
+    AT=Transpose(A);  //calculate A transposed using util
+    //calculate normal equations C and c
+    C=AT*A;
+    c=AT*b;
+    //solve
+    SVD svd(C);
+    svd.solve(c,a);
+    /*
+    cout << "a: " << a[0] << endl;
+    cout << "b: " << a[1] << endl;
+    cout << "c: " << a[2] << endl;
+    cout << "r: " << sqrt(a[3]+pow(a[0],2)+pow(a[1],2)+pow(a[2],2)) << endl;
+    */
+    _singularity_fit=Sphere(a[0],a[1],a[2],sqrt(a[3]+pow(a[0],2)+pow(a[1],2)+pow(a[2],2)));
+}
+
 void DiscreteWorkspace::publish_grid(ros::Publisher &pub, string setting="singularities"){
   //MARKER SETUP-------------------------------------------------------------------------------------------------------------------------------------------------------------
     visualization_msgs::Marker marker;
@@ -342,8 +434,9 @@ void DiscreteWorkspace::publish_grid(ros::Publisher &pub, string setting="singul
     marker.color.a = 1.0;
     marker.lifetime = ros::Duration();
 
-    //Create marker array with markers based on setting
-    int m_id=0;
+    //Create marker array with markers based on setting, starts at id 200, so we can use the first 200 for other markers
+    int m_id=200;
+    marker.ns="voxels";
 
     visualization_msgs::MarkerArray marker_array;
     for(int x=0;x<_x_voxels;x++){
@@ -352,7 +445,6 @@ void DiscreteWorkspace::publish_grid(ros::Publisher &pub, string setting="singul
                 // Set the namespace and id for this marker.  This serves to create a unique ID
                 // Any marker sent with the same namespace and id will overwrite the old one
                 marker.id=m_id++;
-                marker.ns="voxel"+to_string(marker.id);
 
                 //(1.0-(((*this)(x,y,z))/_maxfire));                     
                 //ROS_INFO("value: %f maxfire: %f frac: %f",(*this)(x,y,z),_maxfire,marker.color.a);
@@ -420,6 +512,133 @@ void DiscreteWorkspace::publish_grid(ros::Publisher &pub, string setting="singul
     }
 
 }
+
+void DiscreteWorkspace::publish_sphere_fit(ros::Publisher &pub){
+    double radius=_singularity_fit.r;
+    double x_center=_singularity_fit.a;
+    double y_center=_singularity_fit.b;
+    double z_center=_singularity_fit.c;
+
+  //MARKER SETUP-------------------------------------------------------------------------------------------------------------------------------------------------------------
+    visualization_msgs::Marker marker;
+    // Set the frame ID and timestamp.  See the TF tutorials for information on these.
+    marker.header.frame_id = "panda_link0_sc"; //SET TO PANDA LINK 0
+    marker.header.stamp = ros::Time::now();
+
+    // Set the marker type. 
+    marker.type =  visualization_msgs::Marker::SPHERE;
+
+    // Set the marker action.  Options are ADD, DELETE, and new in ROS Indigo: 3 (DELETEALL)
+    marker.action = visualization_msgs::Marker::ADD;
+
+    // Set the pose of the marker.  This is a full 6DOF pose relative to the frame/time specified in the header
+    marker.pose.orientation.x = 0.0;
+    marker.pose.orientation.y = 0.0;
+    marker.pose.orientation.z = 0.0;
+    marker.pose.orientation.w = 1.0;
+
+    marker.pose.position.x = x_center;
+    marker.pose.position.y = y_center;
+    marker.pose.position.z = z_center;
+
+
+    // Set the scale of the marker -- 1x1x1 here means 1m on a side
+    marker.scale.x = 2*radius;
+    marker.scale.y = 2*radius;
+    marker.scale.z = 2*radius; 
+
+    // Set the color -- be sure to set alpha to something non-zero!
+    marker.color.r = 1.0f;
+    marker.color.b = 0.0f;
+    marker.color.g = 0.0f;
+
+    marker.color.a = .5;
+    marker.lifetime = ros::Duration();
+
+    //Create markyer array with markers based on setting
+    int m_id=0;//_x_voxels*_y_voxels*_z_voxels*20;
+    marker.ns="singular_sphere_fit";
+    //MARKER SETUP-------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+    //spin untill ros is ok, publish array if subscriber is there
+    while(true){
+        if(ros::ok()){
+            if(pub.getNumSubscribers() > 0){
+               ROS_INFO("Sphere SUBSCRIBER DETECteD");
+                pub.publish(marker);
+                sleep(1);
+                break;
+            } else {
+                ROS_WARN_ONCE("Please create a subscriber to the marker");
+                sleep(1);
+            }
+        } else {
+            exit(404); //die if ros is not okay
+        }
+    }
+
+}
+
+void DiscreteWorkspace::add_singularities_to_fit(){
+    Point center(_singularity_fit.a,_singularity_fit.b,_singularity_fit.c,0);
+    double r=_singularity_fit.r;
+    for(int x=0;x<_x_voxels;x++){
+        for(int y=0;y<_y_voxels;y++){
+            for(int z=0;z<_z_voxels;z++){
+                Vector v(coordinate_to_point(Coordinate(x,y,z)),center);
+                double scalar=r/v.size();
+                v.x=scalar*v.x;
+                v.y=scalar*v.y;
+                v.z=scalar*v.z;
+                Point closest_point(center.x+v.x,center.y+v.y,center.z+v.z,1);
+                add_point_to_grid_only(closest_point);
+            }
+        }
+    }
+}
+
+void DiscreteWorkspace::fill_unreachable_areas(){
+    //xy plane
+    for(int x=0;x<_x_voxels;x++){ 
+        for(int y=0;y<_y_voxels;y++){  
+            int z=0;
+            while(in_bounds(x,y,z)&&((*this)(x,y,z)!=1)){
+                (*this)(x,y,z)=1;
+                z++;
+            }
+            z=_z_voxels-1;
+            while(in_bounds(x,y,z)&&((*this)(x,y,z)!=1)){
+                (*this)(x,y,z)=1;
+                z--;
+            }
+        }
+    } 
+}
+
+vector<Point> DiscreteWorkspace::convex_hull_singularities(){
+	using namespace quickhull;
+	
+    QuickHull<float> qh; // Could be double as well
+	std::vector<Vector3<float>> pointCloud;
+    
+	// Add points to point cloud
+    for(int i=0;i<_singularities.size();i++){
+        pointCloud.push_back(Vector3<float>(_singularities.at(i).x,_singularities.at(i).y,_singularities.at(i).z));
+    }
+
+	auto hull = qh.getConvexHull(pointCloud, true, false);
+	const auto& vertexBuffer = hull.getVertexBuffer();
+
+    vector<Point> new_sings;
+    for(int i=0;i<vertexBuffer.size();i++){
+        new_sings.push_back(Point(vertexBuffer[i].x,vertexBuffer[i].y,vertexBuffer[i].z,1));
+    }
+
+
+    return new_sings;
+
+}
+
 
 
 #endif
