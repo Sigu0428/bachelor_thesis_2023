@@ -12,11 +12,13 @@ using namespace std;
 
 double threshold= 0.1;
 
-int max_sniffs=3;
+int max_sniffs=2;
 
 #define GRADIENTSLICE
 //"manipslice"; //"gradientslice" "singularvoxels"
 
+
+string rel_path;
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -70,6 +72,7 @@ int main( int argc, char** argv )
     ros::init(argc, argv, "basic_shapes");
     ros::NodeHandle n;
     ros::Rate r(10);
+    ros::Rate r_long(0.5);
     ros::Publisher marker_pub = n.advertise<visualization_msgs::MarkerArray>("visualization_marker_array", 1);
     ros::Subscriber pointcloud_sub=n.subscribe<sensor_msgs::PointCloud>("panda_link0_sc/workspacePointCloud",1,add_average_cb); //call cb function when new message is on topic
     
@@ -77,6 +80,7 @@ int main( int argc, char** argv )
     ROS_INFO("WAITING FOR POINTCLOUD");
     int sniffs=0;
     while(max_sniffs-sniffs){ 
+        system("roslaunch genPointCloud_pandaDefault.launch");
         while(!received){ //Spin and sleep until pointcloud is published to topic
             ros::spinOnce(); 
             r.sleep();
@@ -86,6 +90,7 @@ int main( int argc, char** argv )
         ROS_INFO("sniffed %d time(s)",sniffs);
     }
     
+
     //generate _grid from _containergrid averages and publish
     if(ros::ok()){
         ROS_INFO("pub");
