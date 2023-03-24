@@ -11,6 +11,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
   std_msgs
+  tf
 #  hardware_interface
 #  franka_hw
 #  franka_msgs
