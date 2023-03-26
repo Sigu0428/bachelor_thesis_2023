@@ -24,6 +24,13 @@ struct Point{ //point in space
         z=z_in;
         val=val_in;
     }
+    bool operator==(Point p){
+        if((x=p.x)&&(y=p.y)&&(z=p.z)){
+            return 1;
+        } else {
+            return 0;
+        }
+    }
     double x;
     double y;  
     double z;
@@ -73,10 +80,12 @@ class DiscreteWorkspace{
 public:
     DiscreteWorkspace(double,double,double,int); //0 for empty voxels
 
+    DiscreteWorkspace(DiscreteWorkspace&,DiscreteWorkspace&,int); //assumes workspaces passed with _grid containing empty spaces=0 and singularities=1
+
     double & operator()(int,int,int);
     double & operator()(Coordinate);
 
-    bool add_point(Point); //adds point to grid and _points
+    bool add_point(Point); //adds point to grid and _points //REMOVE, WE ONLY WANT TO TOUCH _GRID WITH BRUSHFIRE/SINGULAR GRID
     bool add_point_to_container(Point); //adds point to _containergrid and _points
 
     void generate_average_grid(); //fill grid cells with average from _containergrid, cells with no samples average to 0
@@ -104,6 +113,7 @@ public:
     ~DiscreteWorkspace();
 
 private:
+    string _rviz_base_frame="world";
 
     //Physical workspace size
     double _x_size;     //[m]
@@ -117,15 +127,15 @@ private:
     int _z_voxels;
 
     //Trackers for min and max brushfire/manipulability
-    double _maxfire=1; //maximum voxel value from brushfire
-    double _max_manip=0; //maximum manipulability for a voxel
-    double _min_manip=1; //minimum non-zero manipulability for a voxel
+    double _maxfire=1.0; //maximum voxel value from brushfire
+    double _max_manip=0.0; //maximum manipulability for a voxel
+    double _min_manip=1.0; //minimum non-zero manipulability for a voxel
 
     //data 
     vector<vector<vector<double>>> _grid;
     vector<vector<vector<vector<double>>>> _containergrid;
 
-    vector<Point> _points; //list of added samples, ONLY USED TO RESCALE GRIDS
+    vector<Point> _points; //list of added samples, used for rebuild and averaging
     vector<Point> _singularities; //list of singularities, used to merge grids
 
     Sphere _singularity_fit;
@@ -139,7 +149,7 @@ private:
     bool add_point_to_container_only(Point); //add point to container, used by rebuild (we dont want duplicates in _points)
     bool add_point_to_grid_only(Point); //add point to grid, used by rebuild (we dont want duplicates in _points)
 
-
+    void unique_append(vector<Point>&, Point);
 
     vector<Point> convex_hull_singularities(); //creates convex hull from _singularities. Untested and unused
 
@@ -155,6 +165,23 @@ DiscreteWorkspace::DiscreteWorkspace(double x,double y,double z, int res)
     _resolution=res;
     build_grid();
     build_container();
+}
+
+DiscreteWorkspace::DiscreteWorkspace(DiscreteWorkspace& w1,DiscreteWorkspace& w2,int){
+    _x_size=w1._x_size;
+    _y_size=w1._y_size;
+    _z_size=w1._z_size;
+    _resolution=w1._resolution;
+    build_grid();
+    for(int x=0;x<_x_voxels;x++){
+        for(int y=0;y<_y_voxels;y++){
+            for(int z=0;z<_z_voxels;z++){
+                (*this)(x,y,z)=w1(x,y,z) || w2(x,y,z);
+            }
+        }
+    }
+
+    
 }
 
 DiscreteWorkspace::~DiscreteWorkspace(){};
@@ -206,6 +233,19 @@ Coordinate DiscreteWorkspace::point_to_coordinate(Point p){
 Point DiscreteWorkspace::coordinate_to_point(Coordinate c){
     Point p((c.x-round(0.5*_x_voxels))/_resolution,(c.y-round(0.5*_y_voxels))/_resolution,(c.z-round(0.5*_z_voxels))/_resolution,(*this)(c));
     return p;
+}
+
+void DiscreteWorkspace::unique_append(vector<Point>& v, Point p){
+    bool exists=0;
+    for(int i=0;i<v.size();i++){
+        if(v.at(i)==p){
+            exists=1;
+            break;
+        }
+    }
+    if(!exists){
+        v.push_back(p);
+    }
 }
 
 bool DiscreteWorkspace::add_point_to_grid_only(Point p){
@@ -355,6 +395,7 @@ void DiscreteWorkspace::brushfire(){
         _maxfire=value;
         value++;
     }
+    _max_manip=0; //for visualization 
 }
 
 void DiscreteWorkspace::sphere_fit_singularities(){
@@ -402,10 +443,25 @@ void DiscreteWorkspace::sphere_fit_singularities(){
 }
 
 void DiscreteWorkspace::publish_grid(ros::Publisher &pub, string setting="singularities"){
+    
+
   //MARKER SETUP-------------------------------------------------------------------------------------------------------------------------------------------------------------
     visualization_msgs::Marker marker;
+    visualization_msgs::MarkerArray marker_array;
+
+    //delete sphere
+    marker.action = visualization_msgs::Marker::ADD;
+    marker.header.frame_id = _rviz_base_frame; //SET TO PANDA LINK 0
+    marker.header.stamp = ros::Time::now();
+    marker.type =  visualization_msgs::Marker::SPHERE;
+    marker.ns="singular_sphere_fit";
+    marker.id=0;
+
+     marker_array.markers.push_back(marker);
+
+    //CREATE OTHER GRID MARKERS------------------------------------------------------------------------------------------------
     // Set the frame ID and timestamp.  See the TF tutorials for information on these.
-    marker.header.frame_id = "panda_link0_sc"; //SET TO PANDA LINK 0
+    marker.header.frame_id = _rviz_base_frame; //SET TO PANDA LINK 0
     marker.header.stamp = ros::Time::now();
 
 
@@ -438,7 +494,7 @@ void DiscreteWorkspace::publish_grid(ros::Publisher &pub, string setting="singul
     int m_id=200;
     marker.ns="voxels";
 
-    visualization_msgs::MarkerArray marker_array;
+    
     for(int x=0;x<_x_voxels;x++){
         for(int y=0;y<_y_voxels;y++){
             for(int z=0;z<_z_voxels;z++){
@@ -473,8 +529,8 @@ void DiscreteWorkspace::publish_grid(ros::Publisher &pub, string setting="singul
                         marker.color.r=1;
                     }
                 } else if(setting=="singularitygradient"){
-                    marker.color.b=min(3*((*this)(x,y,z))/_maxfire,1.0); //max is taken so that gradient works regardless of if brushfire or manipubility grid is being visualized
-                    marker.color.g=max(1.0-3*((*this)(x,y,z))/_maxfire,0.0);
+                    marker.color.b=min(1*((*this)(x,y,z))/_maxfire,1.0); //max is taken so that gradient works regardless of if brushfire or manipubility grid is being visualized
+                    marker.color.g=max(1.0-1*((*this)(x,y,z))/_maxfire,0.0);
                     marker_array.markers.push_back(marker);
                     if((*this)(x,y,z)==0){
                         marker.color.b=0;
@@ -489,6 +545,7 @@ void DiscreteWorkspace::publish_grid(ros::Publisher &pub, string setting="singul
         }
     }
 
+                    ROS_INFO("maxfire: %f",_maxfire);
 
     //MARKER SETUP-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -522,7 +579,7 @@ void DiscreteWorkspace::publish_sphere_fit(ros::Publisher &pub){
   //MARKER SETUP-------------------------------------------------------------------------------------------------------------------------------------------------------------
     visualization_msgs::Marker marker;
     // Set the frame ID and timestamp.  See the TF tutorials for information on these.
-    marker.header.frame_id = "panda_link0_sc"; //SET TO PANDA LINK 0
+    marker.header.frame_id = _rviz_base_frame; //SET TO PANDA LINK 0
     marker.header.stamp = ros::Time::now();
 
     // Set the marker type. 
