@@ -15,7 +15,7 @@ double threshold= 0.08;
 int max_sniffs=1;
 int N_points=100000;
 
-#define COMBINEDGRADIENTSLICE 15
+#define GRADIENTSLICE 15
 //"manipslice"; //"gradientslice" "singularvoxels" value: res
 
 string launchpath="roslaunch ~/catkin_ws/src/Afrovenator/mycode/src/genPointCloud.launch num_of_points:="+to_string(N_points);
@@ -39,22 +39,10 @@ int received = 0;
     DiscreteWorkspace w1(3,0.05,2.5,COMBINEDGRADIENTSLICE);
     DiscreteWorkspace w2(3,0.05,2.5,COMBINEDGRADIENTSLICE);
 #endif
-
-void add_singularities_cb(const sensor_msgs::PointCloud::ConstPtr& msg){
-    ROS_INFO("called back");
-    vector<geometry_msgs::Point32> points=msg->points;
-
-    for(int i=0;i<points.size();i++){
-        if(msg->channels.at(0).values.at(i)<threshold){
-            Point p(double(points.at(i).x),double(points.at(i).y),double(points.at(i).z),1);   
-            w1.add_point(p);
-            //ROS_INFO("Point(%f,%f,%f), val: %f",p.x,p.y,p.z,p.val);
-        } 
-    }
-
-    received = 1;
-
-}
+#ifdef SANDBOX
+    DiscreteWorkspace w1(2,2,2,SANDBOX);
+    DiscreteWorkspace w2(2,2,2,SANDBOX);
+#endif
 
 
 void pointcloud_to_average1(const sensor_msgs::PointCloud::ConstPtr& msg){ //add points to containergrid
@@ -105,6 +93,9 @@ int main( int argc, char** argv )
     r.sleep();
 
 
+//    Point p2=w1.coordinate_to_point(c1);
+    
+
     ROS_INFO("WAITING FOR POINTCLOUD");
     while(received<2){ //Spin and sleep until pointcloud is published to topic
         ros::spinOnce(); 
@@ -128,11 +119,11 @@ int main( int argc, char** argv )
 
             w1.publish_grid(marker_array_pub,"singularitygradient");
             
-            w1.sphere_fit_singularities();
+            w1.fit_sphere_to_singularities();
             w1.publish_sphere_fit(marker_pub);
             
             r_long.sleep();
-            w1.add_singularities_to_fit();
+            w1.add_singularities_from_fit();
             r_long.sleep();
             
             w1.publish_grid(marker_array_pub,"singularitygradient");

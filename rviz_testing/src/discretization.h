@@ -85,26 +85,25 @@ public:
     double & operator()(int,int,int);
     double & operator()(Coordinate);
 
-    bool add_point(Point); //adds point to grid and _points //REMOVE, WE ONLY WANT TO TOUCH _GRID WITH BRUSHFIRE/SINGULAR GRID
+    //bool add_point(Point); //adds point to grid and _points //REMOVE, WE ONLY WANT TO TOUCH _GRID WITH BRUSHFIRE/SINGULAR GRID
     bool add_point_to_container(Point); //adds point to _containergrid and _points
 
     void generate_average_grid(); //fill grid cells with average from _containergrid, cells with no samples average to 0
 
-    void average_to_singular_grid(double); //use averaged manipulability to define singularities (1) based on threshold
+    void average_to_singular_grid(double); //use averaged manipulability to define singularities (1) in _grid based on threshold
     void average_to_manipulability_grid(); //use scale averaged manipulability grid for visualization
 
-    void brushfire(); //generate brushfire on grid based on 
+    void brushfire(); //generate brushfire on grid based on singularities
 
-
-    void sphere_fit_singularities();
-    void add_singularities_to_fit();
-    void fill_unreachable_areas();
+    void fit_sphere_to_singularities(); //fits sphere to _singularities
+    void add_singularities_from_fit(); //adds singularities at intersection between fitted sphere and grid to _grid (doesnt append to _singularities)
+    void fill_unreachable_areas(); //fills outside of workspace with singularities
 
     void rebuild_grids(double); //rescale and rebuild grid and container from _points
 
     //conversions
     Coordinate point_to_coordinate(Point);
-    Point coordinate_to_point(Coordinate); //places point and center of voxel
+    Point coordinate_to_point(Coordinate); //gets point at center of voxel
 
     void publish_grid(ros::Publisher&,string);
 
@@ -132,8 +131,8 @@ private:
     double _min_manip=1.0; //minimum non-zero manipulability for a voxel
 
     //data 
-    vector<vector<vector<double>>> _grid;
-    vector<vector<vector<vector<double>>>> _containergrid;
+    vector<vector<vector<double>>> _grid; //discrete 3D workspace. Singularities = 1, contains brushfire values and is used for visualization
+    vector<vector<vector<vector<double>>>> _containergrid; //discrete 3D workspace with list of values at each voxels. Used for averaging.
 
     vector<Point> _points; //list of added samples, used for rebuild and averaging
     vector<Point> _singularities; //list of singularities, used to merge grids
@@ -147,7 +146,7 @@ private:
     bool in_bounds(int,int,int);
     bool in_bounds(Coordinate);
     bool add_point_to_container_only(Point); //add point to container, used by rebuild (we dont want duplicates in _points)
-    bool add_point_to_grid_only(Point); //add point to grid, used by rebuild (we dont want duplicates in _points)
+    //bool add_point_to_grid_only(Point); //add point to grid, used by rebuild (we dont want duplicates in _points)
 
     void unique_append(vector<Point>&, Point);
 
@@ -226,12 +225,12 @@ double & DiscreteWorkspace::operator()(Coordinate c){
 }
 
 Coordinate DiscreteWorkspace::point_to_coordinate(Point p){
-    Coordinate c(round(p.x*_resolution)+round(0.5*_x_voxels),round(p.y*_resolution)+round(0.5*_y_voxels),round(p.z*_resolution)+round(0.5*_z_voxels));
+    Coordinate c(floor(p.x*_resolution)+round(0.5*_x_voxels),floor(p.y*_resolution)+round(0.5*_y_voxels),floor(p.z*_resolution)+round(0.5*_z_voxels));
     return c;
 }
 
 Point DiscreteWorkspace::coordinate_to_point(Coordinate c){
-    Point p((c.x-round(0.5*_x_voxels))/_resolution,(c.y-round(0.5*_y_voxels))/_resolution,(c.z-round(0.5*_z_voxels))/_resolution,(*this)(c));
+    Point p((c.x-round(0.5*_x_voxels))/_resolution+0.5/_resolution,(c.y-round(0.5*_y_voxels))/_resolution+0.5/_resolution,(c.z-round(0.5*_z_voxels))/_resolution+0.5/_resolution,(*this)(c));
     return p;
 }
 
@@ -247,7 +246,7 @@ void DiscreteWorkspace::unique_append(vector<Point>& v, Point p){
         v.push_back(p);
     }
 }
-
+/*
 bool DiscreteWorkspace::add_point_to_grid_only(Point p){
     //assumes points are in [m]
     if(in_bounds(point_to_coordinate(p))){
@@ -258,7 +257,7 @@ bool DiscreteWorkspace::add_point_to_grid_only(Point p){
     }
 
 }
-
+*/
 bool DiscreteWorkspace::add_point_to_container_only(Point p){
     //assumes points are in [m]
     Coordinate c=point_to_coordinate(p);
@@ -270,7 +269,7 @@ bool DiscreteWorkspace::add_point_to_container_only(Point p){
     }
 
 }
-
+/*
 bool DiscreteWorkspace::add_point(Point p){
     //assumes points are in [m]
     if(add_point_to_grid_only(p)){
@@ -281,7 +280,7 @@ bool DiscreteWorkspace::add_point(Point p){
     }
 
 }
-
+*/
 bool DiscreteWorkspace::add_point_to_container(Point p){
     //assumes points are in [m]
     Coordinate c=point_to_coordinate(p);
@@ -353,7 +352,6 @@ void DiscreteWorkspace::rebuild_grids(double resolution){
     build_grid();
     build_container();
     for(int i=0;i<_points.size();i++){
-        add_point_to_grid_only(_points.at(i));
         add_point_to_container_only(_points.at(i));
     }
 }
@@ -398,7 +396,7 @@ void DiscreteWorkspace::brushfire(){
     _max_manip=0; //for visualization 
 }
 
-void DiscreteWorkspace::sphere_fit_singularities(){
+void DiscreteWorkspace::fit_sphere_to_singularities(){
 
     //parameters
     double sigma=1;
@@ -505,10 +503,9 @@ void DiscreteWorkspace::publish_grid(ros::Publisher &pub, string setting="singul
                 //(1.0-(((*this)(x,y,z))/_maxfire));                     
                 //ROS_INFO("value: %f maxfire: %f frac: %f",(*this)(x,y,z),_maxfire,marker.color.a);
 
-                marker.pose.position.x = coordinate_to_point(Coordinate(x,y,z)).x+1.0/(2*_resolution);
-                marker.pose.position.y = coordinate_to_point(Coordinate(x,y,z)).y+1.0/(2*_resolution);
-                marker.pose.position.z = coordinate_to_point(Coordinate(x,y,z)).z+1.0/(2*_resolution);
-
+                marker.pose.position.x = coordinate_to_point(Coordinate(x,y,z)).x;
+                marker.pose.position.y = coordinate_to_point(Coordinate(x,y,z)).y;
+                marker.pose.position.z = coordinate_to_point(Coordinate(x,y,z)).z;
 
                 marker.color.r=0;
 
@@ -636,7 +633,7 @@ void DiscreteWorkspace::publish_sphere_fit(ros::Publisher &pub){
 
 }
 
-void DiscreteWorkspace::add_singularities_to_fit(){
+void DiscreteWorkspace::add_singularities_from_fit(){
     Point center(_singularity_fit.a,_singularity_fit.b,_singularity_fit.c,0);
     double r=_singularity_fit.r;
     for(int x=0;x<_x_voxels;x++){
@@ -648,28 +645,40 @@ void DiscreteWorkspace::add_singularities_to_fit(){
                 v.y=scalar*v.y;
                 v.z=scalar*v.z;
                 Point closest_point(center.x+v.x,center.y+v.y,center.z+v.z,1);
-                add_point_to_grid_only(closest_point);
+                if(in_bounds(point_to_coordinate(closest_point))){
+                    (*this)(point_to_coordinate(closest_point))=closest_point.val; 
+                }
             }
         }
     }
 }
 
 void DiscreteWorkspace::fill_unreachable_areas(){
-    //xy plane
-    for(int x=0;x<_x_voxels;x++){ 
-        for(int y=0;y<_y_voxels;y++){  
-            int z=0;
-            while(in_bounds(x,y,z)&&((*this)(x,y,z)!=1)){
-                (*this)(x,y,z)=1;
-                z++;
-            }
-            z=_z_voxels-1;
-            while(in_bounds(x,y,z)&&((*this)(x,y,z)!=1)){
-                (*this)(x,y,z)=1;
-                z--;
+    vector<Coordinate> newly_updated={Coordinate(0,0,0)};
+    int value = 1;
+ 
+    while(newly_updated.size()>0){ //while new vals added
+        vector<Coordinate> prev_updated=newly_updated; //set to prev vals
+        newly_updated.clear();
+        for(int i=0;i<prev_updated.size();i++){ //iterate prev vals
+            //check nbs
+            for(int x_offset=-1;x_offset<=1;x_offset++){
+                for(int y_offset=-1;y_offset<=1;y_offset++){
+                    for(int z_offset=-1;z_offset<=1;z_offset++){
+                        if((abs(x_offset)+abs(y_offset)+abs(z_offset))==1){  //for 4nbs we only want combinations that offset by 1 along an axis
+                            Coordinate nb(prev_updated.at(i).x+x_offset,prev_updated.at(i).y+y_offset,prev_updated.at(i).z+z_offset); 
+                            if(in_bounds(nb)){ //check nbs of prev val
+                                if(((*this)(nb))==0){ //if in bounds and ==0, apply value 1
+                                    (*this)(nb)=value;
+                                    newly_updated.push_back(nb);
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
-    } 
+    }
 }
 
 vector<Point> DiscreteWorkspace::convex_hull_singularities(){
