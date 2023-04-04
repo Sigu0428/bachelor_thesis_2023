@@ -15,7 +15,7 @@ double threshold= 0.08;
 int max_sniffs=1;
 int N_points=100000;
 
-#define GRADIENTSLICE 15
+#define BOUNDARYTEST 10
 //"manipslice"; //"gradientslice" "singularvoxels" value: res
 
 string launchpath="roslaunch ~/catkin_ws/src/Afrovenator/mycode/src/genPointCloud.launch num_of_points:="+to_string(N_points);
@@ -42,6 +42,14 @@ int received = 0;
 #ifdef SANDBOX
     DiscreteWorkspace w1(2,2,2,SANDBOX);
     DiscreteWorkspace w2(2,2,2,SANDBOX);
+#endif
+#ifdef VOLUME
+    DiscreteWorkspace w1(3,2,2,VOLUME);
+    DiscreteWorkspace w2(3,2,2,VOLUME);
+#endif
+#ifdef BOUNDARYTEST
+    DiscreteWorkspace w1(2,0.05,2,BOUNDARYTEST);
+    DiscreteWorkspace w2(2,0.05,2,BOUNDARYTEST);
 #endif
 
 
@@ -198,7 +206,66 @@ int main( int argc, char** argv )
             
 
         #endif
-          
+        #ifdef VOLUME
+            ROS_INFO("workspace 1 volume: %f",w1.workspace_volume_from_samples(threshold));
+            //r_long.sleep();
+           // w1.publish_grid(marker_array_pub,"singularitygradient");
+
+            ROS_INFO("workspace 2 volume: %f",w2.workspace_volume_from_samples(threshold));
+            //r_long.sleep();
+            //w2.publish_grid(marker_array_pub,"singularitygradient");
+        #endif
+        #ifdef BOUNDARYTEST
+            w1.generate_average_grid();
+            w1.average_to_singular_grid(threshold);
+
+            w1.publish_grid(marker_array_pub,"singularitygradient");
+            
+            w1.fit_sphere_to_singularities();
+            w1.publish_sphere_fit(marker_pub);
+            
+            r_long.sleep();
+            w1.add_singularities_from_fit();
+            r_long.sleep();
+            
+            w1.publish_grid(marker_array_pub,"singularitygradient");
+            
+            w1.fill_unreachable_areas();
+            
+            r_long.sleep();
+            w1.publish_grid(marker_array_pub,"singularitygradient");
+            
+            
+            w1.brushfire();
+            r_long.sleep();
+            w1.publish_grid(marker_array_pub,"singularitygradient");
+            
+            w1.generate_forbidden_region(0.2);
+            w1.generate_forbidden_region_gradients(1);
+
+            for(int i=0;i<w1._forbidden_region.size();i++){
+                Coordinate c1=w1._forbidden_region.at(i);
+                Vector v1=w1._gradients.at(c1.x).at(c1.y).at(c1.z);
+                //ROS_INFO("Coordinate: (%d,%d,%d), gradient: (%f,%f,%f)",c1.x,c1.y,c1.z,v1.x,v1.y,v1.z);
+                
+            }
+            r_long.sleep();
+            w1.publish_grid(marker_array_pub,"forbiddenregions");
+
+            r_long.sleep();
+            r_long.sleep();
+                        r_long.sleep();
+            r_long.sleep();
+                        r_long.sleep();
+            r_long.sleep();
+                        r_long.sleep();
+            r_long.sleep();
+                        r_long.sleep();
+            r_long.sleep();
+            w1.publish_grid(marker_array_pub,"gradientarrows");
+
+        #endif
+
     }
 
   

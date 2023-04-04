@@ -31,6 +31,7 @@ struct Point{ //point in space
             return 0;
         }
     }
+
     double x;
     double y;  
     double z;
@@ -38,6 +39,14 @@ struct Point{ //point in space
 };
 
 struct Vector{
+    Vector(){
+        x=0; y=0; z=0;
+    }
+    Vector(double x_in,double y_in,double z_in){
+        x=x_in;
+        y=y_in;
+        z=z_in;
+    }
     Vector(Point p2, Point p1){
         x=p2.x-p1.x;
         y=p2.y-p1.y;
@@ -45,6 +54,23 @@ struct Vector{
     }
     double size(){
         sqrt(pow(x,2)+pow(y,2)+pow(z,2));
+    }
+    Vector operator+(Vector b){
+        return(Vector(x+b.x,y+b.y,z+b.z));
+    }
+    Vector operator*(double b){
+        return(Vector(x*b,y*b,z*b));
+    }
+    Vector operator=(Vector b){
+        x=b.x; y=b.y; z=b.z;
+    }
+    Point operator+(Point p){
+        return(Point(x+p.x,y+p.y,z+p.z,0));
+    }
+    void normalize(){
+        x=x/size();
+        y=y/size();
+        z=z/size();
     }
     double x;
     double y;  
@@ -99,6 +125,12 @@ public:
     void add_singularities_from_fit(); //adds singularities at intersection between fitted sphere and grid to _grid (doesnt append to _singularities)
     void fill_unreachable_areas(); //fills outside of workspace with singularities
 
+    double grid_volume(); //counts _grid voxels with value!=1 and calculates volume. can be used after "fill_unreachable areas" or after "brushfire"
+    double workspace_volume_from_samples(double); //gets workspace volume given _container samples(add with "add_point_to_container"). Needs avg manipulability threshold to define singularities
+
+    void generate_forbidden_region(double); //generates forbidden region. Input is width of this region in m.
+    void generate_forbidden_region_gradients(int);
+
     void rebuild_grids(double); //rescale and rebuild grid and container from _points
 
     //conversions
@@ -110,6 +142,10 @@ public:
     void publish_sphere_fit(ros::Publisher&);
 
     ~DiscreteWorkspace();
+
+    vector<vector<vector<Vector>>> _gradients;
+
+    vector<Coordinate> _forbidden_region;
 
 private:
     string _rviz_base_frame="world";
@@ -143,6 +179,8 @@ private:
 
     void build_grid(); //build _grid with 0 in each voxel
     void build_container(); //build _containergrid with a 0 in each voxel
+    void build_gradients();
+
     bool in_bounds(int,int,int);
     bool in_bounds(Coordinate);
     bool add_point_to_container_only(Point); //add point to container, used by rebuild (we dont want duplicates in _points)
@@ -164,6 +202,7 @@ DiscreteWorkspace::DiscreteWorkspace(double x,double y,double z, int res)
     _resolution=res;
     build_grid();
     build_container();
+    build_gradients();
 }
 
 DiscreteWorkspace::DiscreteWorkspace(DiscreteWorkspace& w1,DiscreteWorkspace& w2,int){
@@ -202,6 +241,13 @@ void DiscreteWorkspace::build_container(){
     vector<vector<vector<double>>> y_cells(_y_voxels,z_cells);
     vector<vector<vector<vector<double>>>> x_cells(_x_voxels,y_cells);
     _containergrid=x_cells;
+}
+
+void DiscreteWorkspace::build_gradients(){
+    vector<Vector> z_cells(_z_voxels);
+    vector<vector<Vector>> y_cells(_y_voxels,z_cells);
+    vector<vector<vector<Vector>>> x_cells(_x_voxels,y_cells);
+    _gradients=x_cells;
 }
 
 bool DiscreteWorkspace::in_bounds(int x,int y,int z){
@@ -455,7 +501,12 @@ void DiscreteWorkspace::publish_grid(ros::Publisher &pub, string setting="singul
     marker.ns="singular_sphere_fit";
     marker.id=0;
 
-     marker_array.markers.push_back(marker);
+    marker_array.markers.push_back(marker);
+
+    //delete all cubes before adding new markers
+    marker.type =  visualization_msgs::Marker::CUBE;
+    marker.action = visualization_msgs::Marker::DELETEALL;
+    marker_array.markers.push_back(marker);
 
     //CREATE OTHER GRID MARKERS------------------------------------------------------------------------------------------------
     // Set the frame ID and timestamp.  See the TF tutorials for information on these.
@@ -470,11 +521,12 @@ void DiscreteWorkspace::publish_grid(ros::Publisher &pub, string setting="singul
     marker.action = visualization_msgs::Marker::ADD;
 
     // Set the pose of the marker.  This is a full 6DOF pose relative to the frame/time specified in the header
+/*
     marker.pose.orientation.x = 0.0;
     marker.pose.orientation.y = 0.0;
     marker.pose.orientation.z = 0.0;
     marker.pose.orientation.w = 1.0;
-
+*/
     // Set the scale of the marker -- 1x1x1 here means 1m on a side
     marker.scale.x = 1.0/_resolution;
     marker.scale.y = 1.0/_resolution;
@@ -488,25 +540,30 @@ void DiscreteWorkspace::publish_grid(ros::Publisher &pub, string setting="singul
     marker.color.a = 1.0;
     marker.lifetime = ros::Duration();
 
+
+
     //Create marker array with markers based on setting, starts at id 200, so we can use the first 200 for other markers
     int m_id=200;
     marker.ns="voxels";
 
-    
+
+
+    marker.action = visualization_msgs::Marker::ADD;
+
     for(int x=0;x<_x_voxels;x++){
         for(int y=0;y<_y_voxels;y++){
             for(int z=0;z<_z_voxels;z++){
                 // Set the namespace and id for this marker.  This serves to create a unique ID
                 // Any marker sent with the same namespace and id will overwrite the old one
-                marker.id=m_id++;
+                marker.id=++m_id;
 
                 //(1.0-(((*this)(x,y,z))/_maxfire));                     
                 //ROS_INFO("value: %f maxfire: %f frac: %f",(*this)(x,y,z),_maxfire,marker.color.a);
-
-                marker.pose.position.x = coordinate_to_point(Coordinate(x,y,z)).x;
-                marker.pose.position.y = coordinate_to_point(Coordinate(x,y,z)).y;
-                marker.pose.position.z = coordinate_to_point(Coordinate(x,y,z)).z;
-
+                if(setting!="gradientarrows"){
+                    marker.pose.position.x = coordinate_to_point(Coordinate(x,y,z)).x;
+                    marker.pose.position.y = coordinate_to_point(Coordinate(x,y,z)).y;
+                    marker.pose.position.z = coordinate_to_point(Coordinate(x,y,z)).z;
+                }
                 marker.color.r=0;
 
                 //ROS_INFO("x: %d, y: %d, z: %d, val: %d, alpha: %f",x,y,z,(*this)(x,y,z),marker.color.a);
@@ -519,25 +576,77 @@ void DiscreteWorkspace::publish_grid(ros::Publisher &pub, string setting="singul
                 } else if(setting=="manipulabilitygradient"){
                     marker.color.b=min(1*((*this)(x,y,z))/_max_manip,1.0); //max is taken so that gradient works regardless of if brushfire or manipubility grid is being visualized
                     marker.color.g=max(1.0-1*((*this)(x,y,z))/_max_manip,0.0);
-                    marker_array.markers.push_back(marker);
                     if((*this)(x,y,z)==0){
                         marker.color.b=0;
                         marker.color.g=0;
                         marker.color.r=1;
                     }
+
+                    marker_array.markers.push_back(marker);
                 } else if(setting=="singularitygradient"){
                     marker.color.b=min(1*((*this)(x,y,z))/_maxfire,1.0); //max is taken so that gradient works regardless of if brushfire or manipubility grid is being visualized
                     marker.color.g=max(1.0-1*((*this)(x,y,z))/_maxfire,0.0);
+ 
                     marker_array.markers.push_back(marker);
-                    if((*this)(x,y,z)==0){
-                        marker.color.b=0;
-                        marker.color.g=0;
-                        marker.color.r=1;
+
+                } else if(setting=="forbiddenregions"){
+                    marker.color.b=min(1*((*this)(x,y,z))/_maxfire,1.0); //max is taken so that gradient works regardless of if brushfire or manipubility grid is being visualized
+                    marker.color.g=max(1.0-1*((*this)(x,y,z))/_maxfire,0.0);
+                    bool is_forbidden=0;
+                    for(int i=0;i<_forbidden_region.size();i++){
+                        Coordinate c1=_forbidden_region.at(i);
+                        if((c1.x==x)&&(c1.y==y)&&(c1.z==z)){
+                            is_forbidden=1;
+                            break;
+                        }
                     }
+                    if(is_forbidden){
+                        marker.color.b=0.0f;
+                        marker.color.g=0.0f;
+                        marker.color.r=1.0f;
+                    }
+                    marker_array.markers.push_back(marker);
 
+                } else if(setting=="gradientarrows"){
+                    marker.type =  visualization_msgs::Marker::ARROW;
+                    bool is_forbidden=0;
+                    for(int i=0;i<_forbidden_region.size();i++){
+                        Coordinate c1=_forbidden_region.at(i);
+                        if((c1.x==x)&&(c1.y==y)&&(c1.z==z)){
+                            is_forbidden=1;
+                            break;
+                        }
+                    }
+                    if(is_forbidden){
+                        Vector gradient=_gradients.at(x).at(y).at(z);
+
+                        Point center=coordinate_to_point(Coordinate(x,y,z));
+                        //get end and start point for arrow marker
+                        Point end=(gradient*0.5)+center;
+                        Point start=(gradient*(-0.5))+center;
+                        //convert to geometry msgs
+                        geometry_msgs::Point p0;
+                        p0.x=start.x; p0.y=start.y; p0.z=start.z;
+                        geometry_msgs::Point p1;
+                        p1.x=end.x; p1.y=end.y; p1.z=end.z;
+                        
+                        //ROS_INFO("start(%f,%f,%f), end(%f,%f,%f)",p0.x,p0.y,p0.z,p1.x,p1.y,p1.z);
+                        ROS_INFO("center(%f,%f,%f)",center.x,center.y,center.z);
+                        //add to marker
+                        marker.points.clear();
+                        marker.points.push_back(p0);
+                        marker.points.push_back(p1);
+
+                        marker.scale.x = (1.0/_resolution)*(0.1);
+                        marker.scale.y = (1.0/_resolution)*(0.2);
+                        marker.scale.z = 0.0;
+                        marker.color.b=0.0f;
+                        marker.color.g=0.0f;
+                        marker.color.r=1.0f;
+                        marker_array.markers.push_back(marker);
+
+                    }
                 }
-
-
             }
         }
     }
@@ -638,7 +747,7 @@ void DiscreteWorkspace::add_singularities_from_fit(){
     double r=_singularity_fit.r;
     for(int x=0;x<_x_voxels;x++){
         for(int y=0;y<_y_voxels;y++){
-            for(int z=0;z<_z_voxels;z++){
+            for(int z=0;z<_z_voxels;z++){ //vector with length r from center pointing towards arbitrary point is closest point on sphere
                 Vector v(coordinate_to_point(Coordinate(x,y,z)),center);
                 double scalar=r/v.size();
                 v.x=scalar*v.x;
@@ -680,6 +789,72 @@ void DiscreteWorkspace::fill_unreachable_areas(){
         }
     }
 }
+
+double DiscreteWorkspace::grid_volume(){
+    int voxels=0;
+    for(int x=0;x<_x_voxels;x++){
+        for(int y=0;y<_y_voxels;y++){
+            for(int z=0;z<_z_voxels;z++){
+                if(((*this)(x,y,z))!=1){
+                    voxels++;
+                }
+            }
+        }
+    }
+    return voxels*pow(1.0/_resolution,3);
+}
+
+double DiscreteWorkspace::workspace_volume_from_samples(double threshold){
+    generate_average_grid();
+    average_to_singular_grid(threshold);
+    fit_sphere_to_singularities();
+    add_singularities_from_fit();
+    fill_unreachable_areas();
+    return grid_volume();
+}
+
+void DiscreteWorkspace::generate_forbidden_region(double width){
+    int threshold=ceil(width/(1./_resolution))+1; //brushfire threshold equivalent to width
+    for(int x=0;x<_x_voxels;x++){
+        for(int y=0;y<_y_voxels;y++){
+            for(int z=0;z<_z_voxels;z++){
+                if((((*this)(x,y,z))<=threshold)&&((*this)(x,y,z)>1)){
+                   _forbidden_region.push_back(Coordinate(x,y,z));
+                }
+            }
+        }
+    }
+}
+
+void DiscreteWorkspace::generate_forbidden_region_gradients(int depth){
+    for(int i=0;i<_forbidden_region.size();i++){ 
+
+        Vector sum(0,0,0);
+        Point base=(coordinate_to_point(_forbidden_region.at(i)));
+        base.val=(*this)(_forbidden_region.at(i));
+
+        for(int x_offset=-depth;x_offset<=depth;x_offset++){
+            for(int y_offset=-depth;y_offset<=depth;y_offset++){
+                for(int z_offset=-depth;z_offset<=depth;z_offset++){
+                    Coordinate nb(_forbidden_region.at(i).x+x_offset,_forbidden_region.at(i).y+y_offset,_forbidden_region.at(i).z+z_offset); 
+                    if(in_bounds(nb)){         
+                        Vector target(coordinate_to_point(nb),base);
+                        //ROS_INFO("nb: (%f,%f,%f), base: (%f,%f,%f), Target: (%f,%f,%f)",coordinate_to_point(nb).x,coordinate_to_point(nb).y,coordinate_to_point(nb).z,base.x,base.y,base.z,target.x,target.y,target.z);
+                        target=target*((*this)(nb)-base.val);
+                        //ROS_INFO("scalar: %f",((*this)(nb)-base.val));
+                        //ROS_INFO("Target: (%f,%f,%f)",target.x,target.y,target.z);
+                        sum=sum+target;
+                        //ROS_INFO("sum: (%f,%f,%f)",target.x,target.y,target.z);
+                    }
+                }
+            }
+        }
+        sum.normalize();
+        sum=sum*(1.0/_resolution); //normalize to voxel size
+        _gradients.at(_forbidden_region.at(i).x).at(_forbidden_region.at(i).y).at(_forbidden_region.at(i).z)=sum;
+    }
+}
+
 
 vector<Point> DiscreteWorkspace::convex_hull_singularities(){
 	using namespace quickhull;
