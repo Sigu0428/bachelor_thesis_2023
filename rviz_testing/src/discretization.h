@@ -61,7 +61,7 @@ struct Vector{
     Vector operator*(double b){
         return(Vector(x*b,y*b,z*b));
     }
-    Vector operator=(Vector b){
+    void operator=(Vector b){
         x=b.x; y=b.y; z=b.z;
     }
     Point operator+(Point p){

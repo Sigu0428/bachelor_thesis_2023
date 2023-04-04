@@ -253,15 +253,6 @@ int main( int argc, char** argv )
             w1.publish_grid(marker_array_pub,"forbiddenregions");
 
             r_long.sleep();
-            r_long.sleep();
-                        r_long.sleep();
-            r_long.sleep();
-                        r_long.sleep();
-            r_long.sleep();
-                        r_long.sleep();
-            r_long.sleep();
-                        r_long.sleep();
-            r_long.sleep();
             w1.publish_grid(marker_array_pub,"gradientarrows");
 
         #endif
