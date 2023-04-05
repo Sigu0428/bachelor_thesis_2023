@@ -19,6 +19,13 @@ int N_points=100000;
 //"manipslice"; //"gradientslice" "singularvoxels" value: res
 
 string launchpath="roslaunch ~/catkin_ws/src/Afrovenator/mycode/src/genPointCloud.launch num_of_points:="+to_string(N_points);
+
+
+double force_func(double err,double user_force,double width){
+    //ROS_INFO("err(%f), userF(%f),width(%f)",err,user_force,width);
+    return (err/width)*user_force;
+}
+
 //-------------------------------------------------------------------------------------------------------------------------------------------------
 
 int received = 0;
@@ -48,8 +55,8 @@ int received = 0;
     DiscreteWorkspace w2(3,2,2,VOLUME);
 #endif
 #ifdef BOUNDARYTEST
-    DiscreteWorkspace w1(2,0.05,2,BOUNDARYTEST);
-    DiscreteWorkspace w2(2,0.05,2,BOUNDARYTEST);
+    DiscreteWorkspace w1(2,2,2,BOUNDARYTEST);
+    DiscreteWorkspace w2(2,0.2,2,BOUNDARYTEST);
 #endif
 
 
@@ -241,19 +248,26 @@ int main( int argc, char** argv )
             w1.publish_grid(marker_array_pub,"singularitygradient");
             
             w1.generate_forbidden_region(0.2);
-            w1.generate_forbidden_region_gradients(1);
+            w1.generate_forbidden_region_gradients(4);
 
-            for(int i=0;i<w1._forbidden_region.size();i++){
-                Coordinate c1=w1._forbidden_region.at(i);
-                Vector v1=w1._gradients.at(c1.x).at(c1.y).at(c1.z);
-                //ROS_INFO("Coordinate: (%d,%d,%d), gradient: (%f,%f,%f)",c1.x,c1.y,c1.z,v1.x,v1.y,v1.z);
-                
-            }
             r_long.sleep();
             w1.publish_grid(marker_array_pub,"forbiddenregions");
 
             r_long.sleep();
             w1.publish_grid(marker_array_pub,"gradientarrows");
+
+            double force=20; //N
+            Point p1(0.60,0.,0,0);
+            Vector f1=w1.repulsive_force_from_point(force_func,p1,force);
+            ROS_INFO("Point(%f,%f,%f), force(%f,%f,%f)",p1.x,p1.y,p1.z,f1.x,f1.y,f1.z);
+
+            Point p2(-0.60,0.,0,0);
+            Vector f2=w1.repulsive_force_from_point(force_func,p2,force);
+            ROS_INFO("Point(%f,%f,%f), force(%f,%f,%f)",p2.x,p2.y,p2.z,f2.x,f2.y,f2.z);
+
+            Point p3(0,0.01,0.99,0);
+            Vector f3=w1.repulsive_force_from_point(force_func,p3,force);
+            ROS_INFO("Point(%f,%f,%f), force(%f,%f,%f)",p3.x,p3.y,p3.z,f3.x,f3.y,f3.z);
 
         #endif
 

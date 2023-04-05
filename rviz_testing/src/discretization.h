@@ -108,7 +108,7 @@ public:
 
     DiscreteWorkspace(DiscreteWorkspace&,DiscreteWorkspace&,int); //assumes workspaces passed with _grid containing empty spaces=0 and singularities=1
 
-    double & operator()(int,int,int);
+    double & operator()(int,int,int); //acces _grid
     double & operator()(Coordinate);
 
     //bool add_point(Point); //adds point to grid and _points //REMOVE, WE ONLY WANT TO TOUCH _GRID WITH BRUSHFIRE/SINGULAR GRID
@@ -125,11 +125,14 @@ public:
     void add_singularities_from_fit(); //adds singularities at intersection between fitted sphere and grid to _grid (doesnt append to _singularities)
     void fill_unreachable_areas(); //fills outside of workspace with singularities
 
+
     double grid_volume(); //counts _grid voxels with value!=1 and calculates volume. can be used after "fill_unreachable areas" or after "brushfire"
     double workspace_volume_from_samples(double); //gets workspace volume given _container samples(add with "add_point_to_container"). Needs avg manipulability threshold to define singularities
 
     void generate_forbidden_region(double); //generates forbidden region. Input is width of this region in m.
-    void generate_forbidden_region_gradients(int);
+    void generate_forbidden_region_gradients(int); //generates gradients for _forbidden_region and _singularities. if necessary we can extend to filled voxels(shouldnt be)
+
+    Vector repulsive_force_from_point(double (*)(double,double,double),Point,double); //generate force vector 
 
     void rebuild_grids(double); //rescale and rebuild grid and container from _points
 
@@ -142,10 +145,6 @@ public:
     void publish_sphere_fit(ros::Publisher&);
 
     ~DiscreteWorkspace();
-
-    vector<vector<vector<Vector>>> _gradients;
-
-    vector<Coordinate> _forbidden_region;
 
 private:
     string _rviz_base_frame="world";
@@ -166,12 +165,18 @@ private:
     double _max_manip=0.0; //maximum manipulability for a voxel
     double _min_manip=1.0; //minimum non-zero manipulability for a voxel
 
+    //Boundary parameters
+    double _boundary_width;
+    int _boundary_max_fire;
+
     //data 
     vector<vector<vector<double>>> _grid; //discrete 3D workspace. Singularities = 1, contains brushfire values and is used for visualization
-    vector<vector<vector<vector<double>>>> _containergrid; //discrete 3D workspace with list of values at each voxels. Used for averaging.
+    vector<vector<vector<vector<double>>>> _containergrid; //discrete 3D workspace with list of sampled values at each voxels. Used for averaging.
+    vector<vector<vector<Vector>>> _gradients;
 
+    vector<Coordinate> _forbidden_region;
     vector<Point> _points; //list of added samples, used for rebuild and averaging
-    vector<Point> _singularities; //list of singularities, used to merge grids
+    vector<Point> _singularities; //list of singularities in _grid, used to merge grids. (assigned by average)
 
     Sphere _singularity_fit;
 
@@ -631,7 +636,6 @@ void DiscreteWorkspace::publish_grid(ros::Publisher &pub, string setting="singul
                         p1.x=end.x; p1.y=end.y; p1.z=end.z;
                         
                         //ROS_INFO("start(%f,%f,%f), end(%f,%f,%f)",p0.x,p0.y,p0.z,p1.x,p1.y,p1.z);
-                        ROS_INFO("center(%f,%f,%f)",center.x,center.y,center.z);
                         //add to marker
                         marker.points.clear();
                         marker.points.push_back(p0);
@@ -650,8 +654,6 @@ void DiscreteWorkspace::publish_grid(ros::Publisher &pub, string setting="singul
             }
         }
     }
-
-                    ROS_INFO("maxfire: %f",_maxfire);
 
     //MARKER SETUP-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -815,6 +817,8 @@ double DiscreteWorkspace::workspace_volume_from_samples(double threshold){
 
 void DiscreteWorkspace::generate_forbidden_region(double width){
     int threshold=ceil(width/(1./_resolution))+1; //brushfire threshold equivalent to width
+    _boundary_width=width;
+    _boundary_max_fire=threshold;
     for(int x=0;x<_x_voxels;x++){
         for(int y=0;y<_y_voxels;y++){
             for(int z=0;z<_z_voxels;z++){
@@ -827,16 +831,20 @@ void DiscreteWorkspace::generate_forbidden_region(double width){
 }
 
 void DiscreteWorkspace::generate_forbidden_region_gradients(int depth){
-    for(int i=0;i<_forbidden_region.size();i++){ 
+    vector<Coordinate> boundary=_forbidden_region;
+    for(int i=0;i<_singularities.size();i++){
+        boundary.push_back(point_to_coordinate(_singularities.at(i)));
+    }
+    for(int i=0;i<boundary.size();i++){ 
 
         Vector sum(0,0,0);
-        Point base=(coordinate_to_point(_forbidden_region.at(i)));
-        base.val=(*this)(_forbidden_region.at(i));
+        Point base=(coordinate_to_point(boundary.at(i)));
+        base.val=(*this)(boundary.at(i));
 
         for(int x_offset=-depth;x_offset<=depth;x_offset++){
             for(int y_offset=-depth;y_offset<=depth;y_offset++){
                 for(int z_offset=-depth;z_offset<=depth;z_offset++){
-                    Coordinate nb(_forbidden_region.at(i).x+x_offset,_forbidden_region.at(i).y+y_offset,_forbidden_region.at(i).z+z_offset); 
+                    Coordinate nb(boundary.at(i).x+x_offset,boundary.at(i).y+y_offset,boundary.at(i).z+z_offset); 
                     if(in_bounds(nb)){         
                         Vector target(coordinate_to_point(nb),base);
                         //ROS_INFO("nb: (%f,%f,%f), base: (%f,%f,%f), Target: (%f,%f,%f)",coordinate_to_point(nb).x,coordinate_to_point(nb).y,coordinate_to_point(nb).z,base.x,base.y,base.z,target.x,target.y,target.z);
@@ -851,9 +859,30 @@ void DiscreteWorkspace::generate_forbidden_region_gradients(int depth){
         }
         sum.normalize();
         sum=sum*(1.0/_resolution); //normalize to voxel size
-        _gradients.at(_forbidden_region.at(i).x).at(_forbidden_region.at(i).y).at(_forbidden_region.at(i).z)=sum;
+        _gradients.at(boundary.at(i).x).at(boundary.at(i).y).at(boundary.at(i).z)=sum;
     }
 }
+
+Vector DiscreteWorkspace::repulsive_force_from_point(double (*f)(double,double,double),Point end_effector,double user_force){
+    Coordinate end_effector_coord=point_to_coordinate(end_effector);
+    if(in_bounds(end_effector_coord)){     
+        //error calc
+        int brushfire_err=_boundary_max_fire-(*this)(end_effector_coord);
+        if(brushfire_err>0){ //only apply in boundary
+            double metric_err=brushfire_err*(1./_resolution);
+            double magnitude=f(metric_err,user_force,_boundary_width);
+            Vector force_gradient=_gradients.at(end_effector_coord.x).at(end_effector_coord.y).at(end_effector_coord.z);
+            Vector F_boundary=(force_gradient*(1./force_gradient.size()))*magnitude;
+            return F_boundary;
+        } else {
+            return Vector(0,0,0);
+        }
+    } else {
+        ROS_INFO("WARNING: end_effector outside of workspace");
+        return Vector(0,0,0);
+    }
+}
+
 
 
 vector<Point> DiscreteWorkspace::convex_hull_singularities(){
