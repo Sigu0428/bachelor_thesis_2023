@@ -2,11 +2,11 @@
 #include <cmath>
 #include <iostream>
 #include <math.h>
-#include "eigen-3.4.0/Eigen/Dense"
+#include "Eigen/Dense"
 #include <vector>
 #include <numeric>
-#include "eigen-3.4.0/Eigen/src/Core/Matrix.h"
-#include "eigen-3.4.0/Eigen/src/Core/util/Constants.h"
+#include "Eigen/src/Core/Matrix.h"
+#include "Eigen/src/Core/util/Constants.h"
 #include <std_msgs/Int32.h>
 
 using namespace std;
@@ -183,15 +183,13 @@ class NelderMead{
         T f;
 };
 
-class Eval_workspace{
+class WorkspaceEvaluator{
     private:
         ros::NodeHandle node;
-        string recieve_topic_name;
+        string rx_topic;
         ros::Publisher pub;
     public:
-        Eval_workspace(ros::NodeHandle node, string recieve_topic_name, string transmit_topic_name){
-            this->node = node;
-            this->recieve_topic_name = recieve_topic_name;
+        WorkspaceEvaluator(ros::NodeHandle node, string rx_topic, string tx_topic) : node(node), rx_topic(rx_topic) {
             //this->pub = node.advertise<some_type>(transmit_topic_name, 1);
         };
         double operator()(Matrix<double, Dynamic, 1> x){
@@ -199,7 +197,7 @@ class Eval_workspace{
             cout << "waiting for value" << endl;
             // recieve value
             boost::shared_ptr<std_msgs::Int32 const> shared_ptr;
-            shared_ptr = ros::topic::waitForMessage<std_msgs::Int32>(recieve_topic_name);
+            shared_ptr = ros::topic::waitForMessage<std_msgs::Int32>(rx_topic);
             cout << "no longer waiting" << endl;
             if (shared_ptr != NULL){
                 cout << "message recived: " << *shared_ptr << endl;
@@ -236,10 +234,10 @@ int main(int argc, char **argv)
     //n.subscribe<std_msgs::Int32>("recieve_topic", 1, callback);
 
     Matrix<double, 2, 1> x {-2, -2};
-    Eval_workspace ew(n, "recieve_topic", "transmit_topic");
-    NelderMead<Eval_workspace, 2> nm(ew);
+    WorkspaceEvaluator we(n, "recieve_topic", "transmit_topic");
+    NelderMead<WorkspaceEvaluator, 2> nm(we);
     Matrix<double, 2, 1> sol = nm.runFiniteDifferenceInitialization(x);
-    cout <<  sol << "\n" << Himmelblau(sol) << endl;
+    cout <<  sol << "\n" << we(sol) << endl;
 
     ros::spin();
 
