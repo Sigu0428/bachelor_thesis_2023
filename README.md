@@ -33,5 +33,6 @@ We used the avg. distance from a desired trajectory to the boundary of the works
 ![Screenshot From 2025-06-22 14-27-36](https://github.com/user-attachments/assets/123d3026-7e10-47a9-83da-09847de2621c)
 
 Then we tested a couple of different optimizers, namely Adam (gd), Nelder-mead (nm) and Particle swarm (pso):
+
 ![Screenshot From 2025-06-22 14-27-18](https://github.com/user-attachments/assets/da9439d9-90a6-4187-ab5a-1dd1bb9bec61)
 
